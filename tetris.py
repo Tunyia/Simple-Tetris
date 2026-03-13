@@ -138,13 +138,14 @@ class HardDropEffect:
         self.piece = copy.deepcopy(piece)
         self.start_y = start_y
         self.end_y = end_y
-        self.timer = 0.3
+        self.max_timer = 0.3
+        self.timer = self.max_timer
 
     def update(self, dt):
         self.timer -= dt
 
     def draw(self, screen):
-        alpha = int(255 * (self.timer / 0.15))
+        alpha = int(255 * (self.timer / self.max_timer))
         surf = pygame.Surface((CELL, CELL))
         surf.set_alpha(alpha)
         surf.fill((180,180,180))
@@ -161,7 +162,16 @@ class HardDropEffect:
                     break
             if bottom_y is None:
                 continue
-            for ty in range(self.start_y, self.end_y):
+
+            distance = self.end_y - self.start_y
+            for i, ty in enumerate(range(self.start_y, self.end_y)):
+                fade = (i / max(distance, 1))
+                alpha = int(255 * fade * (self.timer / self.max_timer))
+
+                surf = pygame.Surface((CELL, CELL))
+                surf.set_alpha(alpha)
+                surf.fill((220, 220, 220))
+
                 screen.blit(
                     surf,
                     ((self.piece.x + x) * CELL,
