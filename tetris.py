@@ -160,12 +160,22 @@ def draw_ghost(piece, grid):
 
 def draw_mini_piece(piece, x_offset, y_offset):
     size = CELL // 3
-    for y, row in enumerate(piece.shape):
+
+    shape = piece.shape
+    width = len(shape[0])
+    height = len(shape)
+
+    box_size = 4 * size  # стандартное поле 4x4
+
+    offset_x = (box_size - width * size) // 2
+    offset_y = (box_size - height * size) // 2
+
+    for y, row in enumerate(shape):
         for x, cell in enumerate(row):
             if cell:
                 rect = pygame.Rect(
-                    x_offset + x*size,
-                    y_offset + y*size,
+                    x_offset + offset_x + x * size,
+                    y_offset + offset_y + y * size,
                     size,
                     size
                 )
@@ -178,6 +188,13 @@ def find_full_lines(grid):
             lines.append(i)
     return lines
 
+def get_next_piece():
+    global next_queue
+
+    p = next_queue.pop(0)
+    next_queue.append(Piece())
+
+    return p
 
 held_piece = None #удерживание
 can_hold = True
@@ -187,7 +204,7 @@ score_table = { #сколько очков за сколько линий
     3:500,
     4:800
 }
-next_piece = Piece()
+next_queue = [Piece() for _ in range(3)]
 piece = Piece()
 fall_time = 0
 fall_speed = 0.25 #скорость падения
@@ -268,8 +285,7 @@ while True:
                     clear_timer = clear_duration
 
                 can_hold = True
-                piece = next_piece
-                next_piece = Piece()
+                piece = get_next_piece()
 
     # падение фигуры
     if fall_time > fall_speed:
@@ -285,8 +301,7 @@ while True:
                 clear_timer = clear_duration
 
             can_hold = True
-            piece = next_piece
-            next_piece = Piece()
+            piece = get_next_piece()
 
             if not valid_move(piece, grid):
                 print("GAME OVER")
@@ -313,14 +328,14 @@ while True:
         popup.draw(screen)
 
     if held_piece:
-        draw_mini_piece(held_piece, WIDTH - 40, 15)
+        draw_mini_piece(held_piece, WIDTH - 50, 30)
     hold_text = font.render("Hold:", True, (255, 255, 255))
-    screen.blit(hold_text, (WIDTH - 90, 10))
+    screen.blit(hold_text, (WIDTH - 55, 10))
 
-    if next_piece:
-        draw_mini_piece(next_piece, WIDTH - 40, 60)
+    for i, p in enumerate(next_queue):
+        draw_mini_piece(p, WIDTH - 50, 90 + i*35)
     hold_text = font.render("Next:", True, (255, 255, 255))
-    screen.blit(hold_text, (WIDTH - 90, 10+45))
+    screen.blit(hold_text, (WIDTH - 55, 10+55))
 
     pygame.display.update()
     clock.tick(60)
