@@ -42,6 +42,14 @@ SHAPES = [
      [1,1,1]]
 ]
 
+bag = []
+def get_next_shape():
+    global bag
+    if not bag:
+        bag = SHAPES.copy()
+        random.shuffle(bag)
+    return bag.pop()
+
 def draw_grid():
     for y in range(ROWS):
         for x in range(COLS):
@@ -50,7 +58,7 @@ def draw_grid():
 
 class Piece:
     def __init__(self):
-        self.shape = random.choice(SHAPES)
+        self.shape = copy.deepcopy(get_next_shape())
         self.x = COLS // 2
         self.y = 0
 
