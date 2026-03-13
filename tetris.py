@@ -181,6 +181,11 @@ def draw_mini_piece(piece, x_offset, y_offset):
                 )
                 pygame.draw.rect(screen, (255,255,255), rect)
 
+def draw_preview_box(x, y):
+    size = CELL // 3
+    box = pygame.Rect(x, y, size*4, size*4)
+    pygame.draw.rect(screen, (120,120,120), box, 2)
+
 def find_full_lines(grid):
     lines = []
     for i, row in enumerate(grid):
@@ -327,15 +332,17 @@ while True:
     for popup in popups:
         popup.draw(screen)
 
+    draw_preview_box(WIDTH - 50, 40)
     if held_piece:
-        draw_mini_piece(held_piece, WIDTH - 50, 30)
+        draw_mini_piece(held_piece, WIDTH - 50, 40)
     hold_text = font.render("Hold:", True, (255, 255, 255))
     screen.blit(hold_text, (WIDTH - 55, 10))
 
     for i, p in enumerate(next_queue):
-        draw_mini_piece(p, WIDTH - 50, 90 + i*35)
+        draw_preview_box(WIDTH - 50, 115+i*45)
+        draw_mini_piece(p, WIDTH - 50, 115 + i*45)
     hold_text = font.render("Next:", True, (255, 255, 255))
-    screen.blit(hold_text, (WIDTH - 55, 10+55))
+    screen.blit(hold_text, (WIDTH - 55, 30+55))
 
     pygame.display.update()
     clock.tick(60)
