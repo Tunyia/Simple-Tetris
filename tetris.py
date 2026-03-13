@@ -132,7 +132,41 @@ class ScorePopup:
         surf = font.render(self.text, True, (255,255,0))
         surf.set_alpha(alpha)
         screen.blit(surf, (self.x, self.y))
-popups = []
+
+class HardDropEffect:
+    def __init__(self, piece, start_y, end_y):
+        self.piece = copy.deepcopy(piece)
+        self.start_y = start_y
+        self.end_y = end_y
+        self.timer = 0.3
+
+    def update(self, dt):
+        self.timer -= dt
+
+    def draw(self, screen):
+        alpha = int(255 * (self.timer / 0.15))
+        surf = pygame.Surface((CELL, CELL))
+        surf.set_alpha(alpha)
+        surf.fill((180,180,180))
+
+        shape = self.piece.shape
+        width = len(shape[0])
+        height = len(shape)
+
+        for x in range(width):
+            bottom_y = None
+            for y in reversed(range(height)):
+                if shape[y][x]:
+                    bottom_y = y
+                    break
+            if bottom_y is None:
+                continue
+            for ty in range(self.start_y, self.end_y):
+                screen.blit(
+                    surf,
+                    ((self.piece.x + x) * CELL,
+                     (ty + bottom_y) * CELL)
+                )
 
 def get_ghost_y(piece, grid):
     ghost_y = piece.y
@@ -218,6 +252,8 @@ font = pygame.font.SysFont("Arial", 24)
 clearing_lines = [] #вспышка
 clear_timer = 0
 clear_duration = 0.2
+popups = [] #эффект добавления очков
+hard_drop_effects = [] #эффект падения блока
 while True:
     dt = clock.tick(60) / 1000
     fall_time += dt
@@ -279,6 +315,13 @@ while True:
 
             if event.key == pygame.K_SPACE:
                 drop_distance = get_ghost_y(piece, grid) - piece.y
+
+                start_y = piece.y
+                end_y = piece.y + drop_distance
+                hard_drop_effects.append(
+                    HardDropEffect(piece, start_y, end_y)
+                )
+
                 piece.y += drop_distance
                 #score += drop_distance * 2
 
@@ -317,6 +360,12 @@ while True:
 
     # рисование
     screen.fill((0, 0, 0))
+
+    for effect in hard_drop_effects:
+        effect.update(dt)
+    hard_drop_effects = [e for e in hard_drop_effects if e.timer > 0]
+    for effect in hard_drop_effects:
+        effect.draw(screen)
 
     draw_blocks(grid)
     draw_ghost(piece, grid)
