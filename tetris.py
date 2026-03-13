@@ -117,6 +117,26 @@ def draw_blocks(grid):
 def rotate(shape):
     return [list(row) for row in zip(*shape[::-1])]
 
+def rotate_with_kick(piece, grid):
+    new_shape = rotate(piece.shape)
+    kicks = [
+        (0,0),
+        (-1,0),
+        (1,0),
+        (-2,0),
+        (2,0),
+        (0,-1)
+    ]
+
+    old_shape = piece.shape
+    for dx, dy in kicks:
+        piece.shape = new_shape
+        if valid_move(piece, grid, dx=dx, dy=dy):
+            piece.x += dx
+            piece.y += dy
+            return
+    piece.shape = old_shape
+
 class ScorePopup:
     def __init__(self, x, y, text):
         self.x = x
@@ -305,13 +325,7 @@ while True:
                     fall_speed = 0.05
 
             if event.key == pygame.K_UP:
-                new_shape = rotate(piece.shape)
-                old_shape = piece.shape
-                piece.shape = new_shape
-                if not valid_move(piece, grid):
-                    piece.shape = old_shape
-                else:
-                    lock_timer = 0
+                rotate_with_kick(piece, grid)
 
             if event.key == pygame.K_c and can_hold: #удерживание фигуры
                 if held_piece is None:
