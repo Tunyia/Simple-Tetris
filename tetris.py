@@ -4,25 +4,19 @@ import copy
 import random
 print("Tetris by Tunya")
 
-pygame.init()
-clock = pygame.time.Clock()
-
-MULTIPLAYER = True
-
+CELL = 30
 WIDTH = 300
 HEIGHT = 600
-CELL = 30
 
 ROWS = HEIGHT // CELL
 COLS = WIDTH // CELL
 
-grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
-if MULTIPLAYER:
-    opponent_grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
-    WIDTH = WIDTH * 2 + 80  # 2 поля + пространство под интерфейс
+screen = None
+clock = None
+font = None
 
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("simple-Tetris")
+clearing_lines = []
+next_queue = []
 
 SHAPES = [
     [[1,1,1,1]],
@@ -281,94 +275,125 @@ def draw_opponent_grid(grid, offset_x):
                     color = (64, 64, 64)
                 pygame.draw.rect(screen, color, rect)
 
-held_piece = None #удерживание
-can_hold = True
-score_table = { #сколько очков за сколько линий
-    1:100,
-    2:300,
-    3:500,
-    4:800
-}
-next_queue = [Piece() for _ in range(3)]
-piece = Piece()
-fall_time = 0
-fall_speed = 0.25 #скорость падения
-score = 0 #счёт
-font = pygame.font.SysFont("Arial", 24)
-clearing_lines = [] #вспышка
-clear_timer = 0
-clear_duration = 0.2
-popups = [] #эффект добавления очков
-hard_drop_effects = [] #эффект падения блока
+def run_game(multiplayer=False):
+    global screen, clock, font
+    global ROWS, COLS, WIDTH, HEIGHT
+    global clearing_lines, next_queue
 
-while True:
-    dt = clock.tick(60) / 1000
-    fall_time += dt
+    pygame.init()
+    clock = pygame.time.Clock()
 
-    # обработка удаления линий
-    if clear_timer > 0:
-        clear_timer -= dt
-        if clear_timer <= 0:
-            for line in clearing_lines:
-                del grid[line]
-                grid.insert(0, [0] * COLS)
-            points = score_table.get(len(clearing_lines), 0)
-            score += points
+    grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+    if multiplayer:
+        opponent_grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+        WIDTH = WIDTH * 2 + 80  # 2 поля + пространство под интерфейс
 
-            if MULTIPLAYER:
-                popups.append(ScorePopup(10+300+80 + len(f"Score: {score}") * 10, 10, f"+{points}"))
-            else:
-                popups.append(ScorePopup(10 + len(f"Score: {score}") * 10, 10, f"+{points}"))
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("simple-Tetris")
+    font = pygame.font.SysFont("Arial", 24)
 
-            clearing_lines = []
+    held_piece = None #удерживание
+    can_hold = True
 
-    # события
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+    score_table = { #сколько очков за сколько линий
+        1:100,
+        2:300,
+        3:500,
+        4:800
+    }
+    next_queue = [Piece() for _ in range(3)]
+    piece = Piece()
+    fall_time = 0
+    fall_speed = 0.25 #скорость падения
+    score = 0 #счёт
+    clearing_lines = [] #вспышка
+    clear_timer = 0
+    clear_duration = 0.2
+    popups = [] #эффект добавления очков
+    hard_drop_effects = [] #эффект падения блока
 
-        fall_speed = 0.25
-        if event.type == pygame.KEYDOWN:
+    while True:
+        dt = clock.tick(60) / 1000
+        fall_time += dt
 
-            if event.key == pygame.K_LEFT:
-                if valid_move(piece, grid, dx=-1):
-                    piece.x -= 1
+        # обработка удаления линий
+        if clear_timer > 0:
+            clear_timer -= dt
+            if clear_timer <= 0:
+                for line in clearing_lines:
+                    del grid[line]
+                    grid.insert(0, [0] * COLS)
+                points = score_table.get(len(clearing_lines), 0)
+                score += points
 
-            if event.key == pygame.K_RIGHT:
-                if valid_move(piece, grid, dx=1):
-                    piece.x += 1
-
-            if event.key == pygame.K_DOWN:
-                if valid_move(piece, grid, dy=1):
-                    fall_speed = 0.05
-
-            if event.key == pygame.K_UP:
-                rotate_with_kick(piece, grid)
-
-            if event.key == pygame.K_c and can_hold:  # удерживание фигуры
-                if held_piece is None:
-                    held_piece = copy.deepcopy(piece)
-                    piece = Piece()
+                if multiplayer:
+                    popups.append(ScorePopup(10+300+80 + len(f"Score: {score}") * 10, 10, f"+{points}"))
                 else:
-                    held_piece, piece = piece, held_piece
-                    piece.x = COLS // 2
-                    piece.y = 0
-                can_hold = False
+                    popups.append(ScorePopup(10 + len(f"Score: {score}") * 10, 10, f"+{points}"))
 
-            if event.key == pygame.K_SPACE:
-                drop_distance = get_ghost_y(piece, grid) - piece.y
+                clearing_lines = []
 
-                start_y = piece.y
-                end_y = piece.y + drop_distance
-                hard_drop_effects.append(
-                    HardDropEffect(piece, start_y, end_y)
-                )
+        # события
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
 
-                piece.y += drop_distance
-                # score += drop_distance * 2
+            fall_speed = 0.25
+            if event.type == pygame.KEYDOWN:
 
-                place_piece(piece, grid)  # сразу фиксация
+                if event.key == pygame.K_LEFT:
+                    if valid_move(piece, grid, dx=-1):
+                        piece.x -= 1
+
+                if event.key == pygame.K_RIGHT:
+                    if valid_move(piece, grid, dx=1):
+                        piece.x += 1
+
+                if event.key == pygame.K_DOWN:
+                    if valid_move(piece, grid, dy=1):
+                        fall_speed = 0.05
+
+                if event.key == pygame.K_UP:
+                    rotate_with_kick(piece, grid)
+
+                if event.key == pygame.K_c and can_hold:  # удерживание фигуры
+                    if held_piece is None:
+                        held_piece = copy.deepcopy(piece)
+                        piece = Piece()
+                    else:
+                        held_piece, piece = piece, held_piece
+                        piece.x = COLS // 2
+                        piece.y = 0
+                    can_hold = False
+
+                if event.key == pygame.K_SPACE:
+                    drop_distance = get_ghost_y(piece, grid) - piece.y
+
+                    start_y = piece.y
+                    end_y = piece.y + drop_distance
+                    hard_drop_effects.append(
+                        HardDropEffect(piece, start_y, end_y)
+                    )
+
+                    piece.y += drop_distance
+
+                    place_piece(piece, grid)  # сразу фиксация
+
+                    lines = find_full_lines(grid)
+                    if lines:
+                        clearing_lines = lines
+                        clear_timer = clear_duration
+
+                    can_hold = True
+                    piece = get_next_piece()
+
+        # падение фигуры
+        if fall_time > fall_speed:
+            if valid_move(piece, grid, dy=1):
+                piece.y += 1
+            else:
+                place_piece(piece, grid)
 
                 lines = find_full_lines(grid)
                 if lines:
@@ -378,83 +403,68 @@ while True:
                 can_hold = True
                 piece = get_next_piece()
 
-    # падение фигуры
-    if fall_time > fall_speed:
-        if valid_move(piece, grid, dy=1):
-            piece.y += 1
+                if not valid_move(piece, grid):
+                    print("GAME OVER")
+                    pygame.quit()
+                    sys.exit()
+
+            fall_time = 0
+
+        # рисование
+        screen.fill((0, 0, 0))
+
+        player_offset_x = 0 if not multiplayer else COLS * CELL + 80
+
+        # эффекты
+        for effect in hard_drop_effects:
+            effect.update(dt)
+        hard_drop_effects = [e for e in hard_drop_effects if e.timer > 0]
+        for effect in hard_drop_effects:
+            effect.draw(screen, offset_x=player_offset_x)
+
+        # мультиплеер рисуем opponent_grid слева
+        if multiplayer:
+            #draw_blocks(opponent_grid, offset_x=0)
+            draw_opponent_grid(opponent_grid, 0)
+            draw_grid(offset_x=0)
+
+        # игровое поле игрока справа
+        draw_blocks(grid, offset_x=player_offset_x)
+        draw_ghost(piece, grid, offset_x=player_offset_x)
+        draw_piece(piece, offset_x=player_offset_x)
+        draw_grid(offset_x=player_offset_x)
+
+        # интерфейс
+        if multiplayer:
+            ui_offset_x = player_offset_x
         else:
-            place_piece(piece, grid)
+            ui_offset_x = COLS * CELL + 20  # немного отступаем от поля
 
-            lines = find_full_lines(grid)
-            if lines:
-                clearing_lines = lines
-                clear_timer = clear_duration
+        score_text = font.render(f"Score: {score}", True, (255, 255, 255))
+        if multiplayer:
+            screen.blit(score_text, (10+300+80, 10))
+        else:
+            screen.blit(score_text, (10, 10))
 
-            can_hold = True
-            piece = get_next_piece()
+        for popup in popups:
+            popup.update(dt)
+        popups = [p for p in popups if p.timer > 0]
+        for popup in popups:
+            popup.draw(screen)
 
-            if not valid_move(piece, grid):
-                print("GAME OVER")
-                pygame.quit()
-                sys.exit()
+        # Hold
+        draw_preview_box(WIDTH - 50, 40)
+        if held_piece:
+            draw_mini_piece(held_piece, WIDTH - 50, 40)
+        hold_text = font.render("Hold:", True, (255, 255, 255))
+        screen.blit(hold_text, (WIDTH - 55, 10))
 
-        fall_time = 0
+        # Next
+        for i, p in enumerate(next_queue):
+            draw_preview_box(WIDTH - 50, 115 + i * 45)
+            draw_mini_piece(p, WIDTH - 50, 115 + i * 45)
+        next_text = font.render("Next:", True, (255, 255, 255))
+        screen.blit(next_text, (WIDTH - 55, 30 + 55))
 
-    # рисование
-    screen.fill((0, 0, 0))
-
-    player_offset_x = 0 if not MULTIPLAYER else COLS * CELL + 80
-
-    # эффекты
-    for effect in hard_drop_effects:
-        effect.update(dt)
-    hard_drop_effects = [e for e in hard_drop_effects if e.timer > 0]
-    for effect in hard_drop_effects:
-        effect.draw(screen, offset_x=player_offset_x)
-
-    # мультиплеер рисуем opponent_grid слева
-    if MULTIPLAYER:
-        #draw_blocks(opponent_grid, offset_x=0)
-        draw_opponent_grid(opponent_grid, 0)
-        draw_grid(offset_x=0)
-
-    # игровое поле игрока справа
-    draw_blocks(grid, offset_x=player_offset_x)
-    draw_ghost(piece, grid, offset_x=player_offset_x)
-    draw_piece(piece, offset_x=player_offset_x)
-    draw_grid(offset_x=player_offset_x)
-
-    # интерфейс
-    if MULTIPLAYER:
-        ui_offset_x = player_offset_x
-    else:
-        ui_offset_x = COLS * CELL + 20  # немного отступаем от поля
-
-    score_text = font.render(f"Score: {score}", True, (255, 255, 255))
-    if MULTIPLAYER:
-        screen.blit(score_text, (10+300+80, 10))
-    else:
-        screen.blit(score_text, (10, 10))
-
-    for popup in popups:
-        popup.update(dt)
-    popups = [p for p in popups if p.timer > 0]
-    for popup in popups:
-        popup.draw(screen)
-
-    # Hold
-    draw_preview_box(WIDTH - 50, 40)
-    if held_piece:
-        draw_mini_piece(held_piece, WIDTH - 50, 40)
-    hold_text = font.render("Hold:", True, (255, 255, 255))
-    screen.blit(hold_text, (WIDTH - 55, 10))
-
-    # Next
-    for i, p in enumerate(next_queue):
-        draw_preview_box(WIDTH - 50, 115 + i * 45)
-        draw_mini_piece(p, WIDTH - 50, 115 + i * 45)
-    next_text = font.render("Next:", True, (255, 255, 255))
-    screen.blit(next_text, (WIDTH - 55, 30 + 55))
-
-    pygame.display.update()
-    clock.tick(60)
+        pygame.display.update()
+        clock.tick(60)
