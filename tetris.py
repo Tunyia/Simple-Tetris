@@ -5,20 +5,24 @@ import random
 print("Tetris by Tunya")
 
 pygame.init()
+clock = pygame.time.Clock()
+
+MULTIPLAYER = True
 
 WIDTH = 300
 HEIGHT = 600
 CELL = 30
 
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Tetris")
-
-clock = pygame.time.Clock()
-
 ROWS = HEIGHT // CELL
 COLS = WIDTH // CELL
 
 grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+if MULTIPLAYER:
+    opponent_grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
+    WIDTH = WIDTH * 2 + 80  # 2 поля + пространство под интерфейс
+
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("simple-Tetris")
 
 SHAPES = [
     [[1,1,1,1]],
@@ -50,10 +54,10 @@ def get_next_shape():
         random.shuffle(bag)
     return bag.pop()
 
-def draw_grid():
+def draw_grid(offset_x=0):
     for y in range(ROWS):
         for x in range(COLS):
-            rect = pygame.Rect(x*CELL, y*CELL, CELL, CELL)
+            rect = pygame.Rect(offset_x + x*CELL, y*CELL, CELL, CELL)
             pygame.draw.rect(screen, (40,40,40), rect, 1)
 
 class Piece:
@@ -62,12 +66,12 @@ class Piece:
         self.x = COLS // 2
         self.y = 0
 
-def draw_piece(piece):
+def draw_piece(piece, offset_x=0):
     for y, row in enumerate(piece.shape):
         for x, cell in enumerate(row):
             if cell:
                 rect = pygame.Rect(
-                    (piece.x + x)*CELL,
+                    offset_x + (piece.x + x)*CELL,
                     (piece.y + y)*CELL,
                     CELL,
                     CELL
@@ -103,16 +107,21 @@ def clear_lines(grid):
 
     return new_grid, lines_cleared
 
-def draw_blocks(grid):
+def draw_blocks(grid, offset_x=0):
     for y in range(ROWS):
         for x in range(COLS):
-            if grid[y][x]:
-                rect = pygame.Rect(x*CELL, y*CELL, CELL, CELL)
-                pygame.draw.rect(screen, (255,100,100), rect)
-                if y in clearing_lines:
-                    pygame.draw.rect(screen, (255, 255, 255), rect)
+            cell = grid[y][x]
+            if cell:
+                rect = pygame.Rect(offset_x + x*CELL, y*CELL, CELL, CELL)
+                if cell == 1: # Цвет блока
+                    color = (255, 100, 100)  # обычные блоки
+                elif cell == 2:
+                    color = (120, 120, 120)  # мусор серый
+                if y in clearing_lines: # эффект свечения для очищаемых линий
+                    glow_color = (255, 255, 255)
+                    pygame.draw.rect(screen, glow_color, rect)
                 else:
-                    pygame.draw.rect(screen, (255, 100, 100), rect)
+                    pygame.draw.rect(screen, color, rect)
 
 def rotate(shape):
     return [list(row) for row in zip(*shape[::-1])]
@@ -164,12 +173,8 @@ class HardDropEffect:
     def update(self, dt):
         self.timer -= dt
 
-    def draw(self, screen):
-        alpha = int(255 * (self.timer / self.max_timer))
-        surf = pygame.Surface((CELL, CELL))
-        surf.set_alpha(alpha)
-        surf.fill((180,180,180))
-
+    def draw(self, screen, offset_x=0):
+        alpha_factor = self.timer / self.max_timer
         shape = self.piece.shape
         width = len(shape[0])
         height = len(shape)
@@ -185,8 +190,8 @@ class HardDropEffect:
 
             distance = self.end_y - self.start_y
             for i, ty in enumerate(range(self.start_y, self.end_y)):
-                fade = (i / max(distance, 1))
-                alpha = int(255 * fade * (self.timer / self.max_timer))
+                fade = i / max(distance, 1)
+                alpha = int(255 * fade * alpha_factor)
 
                 surf = pygame.Surface((CELL, CELL))
                 surf.set_alpha(alpha)
@@ -194,7 +199,7 @@ class HardDropEffect:
 
                 screen.blit(
                     surf,
-                    ((self.piece.x + x) * CELL,
+                    ((self.piece.x + x) * CELL + offset_x,
                      (ty + bottom_y) * CELL)
                 )
 
@@ -208,14 +213,13 @@ def get_ghost_y(piece, grid):
 
     return ghost_y
 
-def draw_ghost(piece, grid):
+def draw_ghost(piece, grid, offset_x=0):
     ghost_y = get_ghost_y(piece, grid)
-
     for y, row in enumerate(piece.shape):
         for x, cell in enumerate(row):
             if cell:
                 rect = pygame.Rect(
-                    (piece.x + x)*CELL,
+                    offset_x + (piece.x + x)*CELL,
                     (ghost_y + y)*CELL,
                     CELL,
                     CELL
@@ -259,11 +263,23 @@ def find_full_lines(grid):
 
 def get_next_piece():
     global next_queue
-
     p = next_queue.pop(0)
     next_queue.append(Piece())
-
     return p
+
+def draw_opponent_grid(grid, offset_x):
+    for y in range(ROWS):
+        for x in range(COLS):
+            cell = grid[y][x]
+            if cell:
+                rect = pygame.Rect(offset_x + x * CELL, y * CELL, CELL, CELL)
+                if cell == 1:
+                    color = (100, 100, 255)  # обычные блоки
+                elif cell == 2:
+                    color = (120, 120, 120)  # мусор (серый)
+                else:
+                    color = (64, 64, 64)
+                pygame.draw.rect(screen, color, rect)
 
 held_piece = None #удерживание
 can_hold = True
@@ -284,10 +300,12 @@ clear_timer = 0
 clear_duration = 0.2
 popups = [] #эффект добавления очков
 hard_drop_effects = [] #эффект падения блока
+
 while True:
     dt = clock.tick(60) / 1000
     fall_time += dt
 
+    # обработка удаления линий
     if clear_timer > 0:
         clear_timer -= dt
         if clear_timer <= 0:
@@ -297,9 +315,10 @@ while True:
             points = score_table.get(len(clearing_lines), 0)
             score += points
 
-            popups.append(
-                ScorePopup(10 + len(f"Score: {score}") * 10, 10, f"+{points}")
-            )
+            if MULTIPLAYER:
+                popups.append(ScorePopup(10+300+80 + len(f"Score: {score}") * 10, 10, f"+{points}"))
+            else:
+                popups.append(ScorePopup(10 + len(f"Score: {score}") * 10, 10, f"+{points}"))
 
             clearing_lines = []
 
@@ -327,7 +346,7 @@ while True:
             if event.key == pygame.K_UP:
                 rotate_with_kick(piece, grid)
 
-            if event.key == pygame.K_c and can_hold: #удерживание фигуры
+            if event.key == pygame.K_c and can_hold:  # удерживание фигуры
                 if held_piece is None:
                     held_piece = copy.deepcopy(piece)
                     piece = Piece()
@@ -347,9 +366,9 @@ while True:
                 )
 
                 piece.y += drop_distance
-                #score += drop_distance * 2
+                # score += drop_distance * 2
 
-                place_piece(piece, grid) #сразу фиксация
+                place_piece(piece, grid)  # сразу фиксация
 
                 lines = find_full_lines(grid)
                 if lines:
@@ -367,7 +386,6 @@ while True:
             place_piece(piece, grid)
 
             lines = find_full_lines(grid)
-
             if lines:
                 clearing_lines = lines
                 clear_timer = clear_duration
@@ -385,19 +403,38 @@ while True:
     # рисование
     screen.fill((0, 0, 0))
 
+    player_offset_x = 0 if not MULTIPLAYER else COLS * CELL + 80
+
+    # эффекты
     for effect in hard_drop_effects:
         effect.update(dt)
     hard_drop_effects = [e for e in hard_drop_effects if e.timer > 0]
     for effect in hard_drop_effects:
-        effect.draw(screen)
+        effect.draw(screen, offset_x=player_offset_x)
 
-    draw_blocks(grid)
-    draw_ghost(piece, grid)
-    draw_piece(piece)
-    draw_grid()
+    # мультиплеер рисуем opponent_grid слева
+    if MULTIPLAYER:
+        #draw_blocks(opponent_grid, offset_x=0)
+        draw_opponent_grid(opponent_grid, 0)
+        draw_grid(offset_x=0)
+
+    # игровое поле игрока справа
+    draw_blocks(grid, offset_x=player_offset_x)
+    draw_ghost(piece, grid, offset_x=player_offset_x)
+    draw_piece(piece, offset_x=player_offset_x)
+    draw_grid(offset_x=player_offset_x)
+
+    # интерфейс
+    if MULTIPLAYER:
+        ui_offset_x = player_offset_x
+    else:
+        ui_offset_x = COLS * CELL + 20  # немного отступаем от поля
 
     score_text = font.render(f"Score: {score}", True, (255, 255, 255))
-    screen.blit(score_text, (10, 10))
+    if MULTIPLAYER:
+        screen.blit(score_text, (10+300+80, 10))
+    else:
+        screen.blit(score_text, (10, 10))
 
     for popup in popups:
         popup.update(dt)
@@ -405,17 +442,19 @@ while True:
     for popup in popups:
         popup.draw(screen)
 
+    # Hold
     draw_preview_box(WIDTH - 50, 40)
     if held_piece:
         draw_mini_piece(held_piece, WIDTH - 50, 40)
     hold_text = font.render("Hold:", True, (255, 255, 255))
     screen.blit(hold_text, (WIDTH - 55, 10))
 
+    # Next
     for i, p in enumerate(next_queue):
-        draw_preview_box(WIDTH - 50, 115+i*45)
-        draw_mini_piece(p, WIDTH - 50, 115 + i*45)
-    hold_text = font.render("Next:", True, (255, 255, 255))
-    screen.blit(hold_text, (WIDTH - 55, 30+55))
+        draw_preview_box(WIDTH - 50, 115 + i * 45)
+        draw_mini_piece(p, WIDTH - 50, 115 + i * 45)
+    next_text = font.render("Next:", True, (255, 255, 255))
+    screen.blit(next_text, (WIDTH - 55, 30 + 55))
 
     pygame.display.update()
     clock.tick(60)
