@@ -1,76 +1,12 @@
 import tkinter as tk
-import threading
 import socket
-
-# сеть (временно тут)
-
-server_socket = None
-client_socket = None
-connection_established = False
-
+from network import start_server, start_client, stop
 
 def get_local_ip():
     try:
         return socket.gethostbyname(socket.gethostname())
     except:
         return "127.0.0.1"
-
-
-def start_server_async(on_connected, on_status):
-    def run():
-        global server_socket, client_socket, connection_established
-
-        try:
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.bind(("0.0.0.0", 12345))
-            server_socket.listen(1)
-
-            on_status("Waiting for player...")
-
-            client_socket, _ = server_socket.accept()
-            connection_established = True
-            on_connected()
-
-        except:
-            on_status("Server error")
-
-    threading.Thread(target=run, daemon=True).start()
-
-
-def start_client_async(ip, on_success, on_fail):
-    def run():
-        global client_socket, connection_established
-
-        try:
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.settimeout(3)
-            client_socket.connect((ip, 12345))
-
-            connection_established = True
-            on_success()
-
-        except:
-            on_fail()
-
-    threading.Thread(target=run, daemon=True).start()
-
-
-def stop_network():
-    global server_socket, client_socket, connection_established
-
-    connection_established = False
-
-    try:
-        if server_socket:
-            server_socket.close()
-    except:
-        pass
-
-    try:
-        if client_socket:
-            client_socket.close()
-    except:
-        pass
 
 # MENU
 def choose_mode():
@@ -79,7 +15,7 @@ def choose_mode():
         "ip": ""
     }
 
-    # --- UI state ---
+    #UI state
     waiting_label = None
     cancel_btn = None
 
@@ -150,7 +86,7 @@ def choose_mode():
         def on_status(text):
             root.after(0, lambda: show_waiting(text))
 
-        start_server_async(on_connected, on_status)
+        start_server(on_connected, on_status)
 
     def set_join():
         ip = ip_entry.get().strip()
@@ -173,10 +109,10 @@ def choose_mode():
             enable_buttons()
             clear_waiting()
 
-        start_client_async(ip, on_success, on_fail)
+        start_client(ip, on_success, on_fail)
 
     def cancel_action():
-        stop_network()
+        stop()
         enable_buttons()
         clear_waiting()
 
