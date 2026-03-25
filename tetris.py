@@ -276,6 +276,25 @@ def draw_opponent_grid(grid, offset_x):
                     color = (64, 64, 64)
                 pygame.draw.rect(screen, color, rect)
 
+def draw_opponent_piece(piece, offset_x):
+    if not piece:
+        return
+
+    shape = piece["shape"]
+    px = piece["x"]
+    py = piece["y"]
+
+    for y, row in enumerate(shape):
+        for x, cell in enumerate(row):
+            if cell:
+                rect = pygame.Rect(
+                    offset_x + (px + x) * CELL,
+                    (py + y) * CELL,
+                    CELL,
+                    CELL
+                )
+                pygame.draw.rect(screen, (100, 100, 255), rect)
+
 def run_game(multiplayer=False):
     global screen, clock, font
     global ROWS, COLS, WIDTH, HEIGHT
@@ -328,9 +347,14 @@ def run_game(multiplayer=False):
                 grid.append(new_row)
             network.incoming_garbage = 0
 
-        network.send_data({ # отправка своего поля оппоненту
-            "type": "grid",
-            "grid": grid
+        network.send_data({ # отправка своего поля + падающая фигура оппоненту
+            "type": "state",
+            "grid": grid,
+            "piece": {
+                "shape": piece.shape,
+                "x": piece.x,
+                "y": piece.y
+            }
         })
 
         # обработка удаления линий
@@ -454,8 +478,8 @@ def run_game(multiplayer=False):
         # мультиплеер рисуем opponent_grid слева
         if multiplayer:
             if network.opponent_grid:
-                # draw_blocks(opponent_grid, offset_x=0)
                 draw_opponent_grid(network.opponent_grid, 0)
+                draw_opponent_piece(network.opponent_piece, 0)
             draw_grid(offset_x=0)
 
         # игровое поле игрока справа

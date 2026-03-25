@@ -10,8 +10,9 @@ role = None  # "host" или "client"
 running = False
 
 # данные от оппонента
-opponent_grid = []
+opponent_grid = None
 incoming_garbage = 0
+opponent_piece = None
 
 # SERVER
 def start_server(on_connected, on_status):
@@ -81,7 +82,7 @@ def start_receive_thread():
 
 
 def receive_loop():
-    global opponent_grid, incoming_garbage, running
+    global opponent_grid, incoming_garbage, running, opponent_piece
 
     buffer = ""
     while running:
@@ -98,6 +99,10 @@ def receive_loop():
                 if packet["type"] == "grid":
                     opponent_grid = packet["grid"]
                     #print("GRID RECEIVED", len(opponent_grid))
+
+                elif packet["type"] == "state":
+                    opponent_grid = packet["grid"]
+                    opponent_piece = packet["piece"]
 
                 elif packet["type"] == "garbage":
                     incoming_garbage += packet["amount"]
