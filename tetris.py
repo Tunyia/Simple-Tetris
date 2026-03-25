@@ -2,6 +2,7 @@ import pygame
 import sys
 import copy
 import random
+import network
 print("Tetris by Tunya")
 
 CELL = 30
@@ -316,6 +317,22 @@ def run_game(multiplayer=False):
         dt = clock.tick(60) / 1000
         fall_time += dt
 
+        if network.incoming_garbage > 0: # завоз входящего мусора
+            for _ in range(network.incoming_garbage):
+                grid.pop(0)
+
+                hole = random.randint(0, COLS - 1)
+                new_row = [2] * COLS
+                new_row[hole] = 0
+
+                grid.append(new_row)
+            network.incoming_garbage = 0
+
+        network.send_data({ # отправка своего поля оппоненту
+            "type": "grid",
+            "grid": grid
+        })
+
         # обработка удаления линий
         if clear_timer > 0:
             clear_timer -= dt
@@ -384,6 +401,12 @@ def run_game(multiplayer=False):
                     if lines:
                         clearing_lines = lines
                         clear_timer = clear_duration
+                        if len(clearing_lines) >= 2: # отправка мусорных линий
+                            garbage = len(clearing_lines) - 1
+                            network.send_data({
+                                "type": "garbage",
+                                "amount": garbage
+                            })
 
                     can_hold = True
                     piece = get_next_piece()
@@ -399,6 +422,12 @@ def run_game(multiplayer=False):
                 if lines:
                     clearing_lines = lines
                     clear_timer = clear_duration
+                    if len(clearing_lines) >= 2:  # отправка мусорных линий
+                        garbage = len(clearing_lines) - 1
+                        network.send_data({
+                            "type": "garbage",
+                            "amount": garbage
+                        })
 
                 can_hold = True
                 piece = get_next_piece()
@@ -424,8 +453,9 @@ def run_game(multiplayer=False):
 
         # мультиплеер рисуем opponent_grid слева
         if multiplayer:
-            #draw_blocks(opponent_grid, offset_x=0)
-            draw_opponent_grid(opponent_grid, 0)
+            if network.opponent_grid:
+                # draw_blocks(opponent_grid, offset_x=0)
+                draw_opponent_grid(network.opponent_grid, 0)
             draw_grid(offset_x=0)
 
         # игровое поле игрока справа
@@ -445,6 +475,12 @@ def run_game(multiplayer=False):
             screen.blit(score_text, (10+300+80, 10))
         else:
             screen.blit(score_text, (10, 10))
+
+        # для дебага показываем роль
+        if multiplayer:
+            role_text = "H" if network.role == "host" else "C"
+            debug_surf = font.render(role_text, True, (255, 255, 0))
+            screen.blit(debug_surf, (0, HEIGHT - 22))
 
         for popup in popups:
             popup.update(dt)

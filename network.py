@@ -5,6 +5,7 @@ import json
 server_socket = None
 client_socket = None
 conn = None
+role = None  # "host" или "client"
 
 running = False
 
@@ -14,6 +15,9 @@ incoming_garbage = 0
 
 # SERVER
 def start_server(on_connected, on_status):
+    global role
+    role = "host"
+    print("HOST")
     def run():
         global server_socket, conn, running
 
@@ -38,6 +42,9 @@ def start_server(on_connected, on_status):
 
 # CLIENT
 def start_client(ip, on_success, on_fail):
+    global role
+    role = "client"
+    print("CLIENT")
     def run():
         global client_socket, conn, running
 
@@ -60,6 +67,8 @@ def start_client(ip, on_success, on_fail):
 # SEND
 def send_data(data):
     global conn
+    if not conn:
+        return  # не отправляем если нет соединения
     try:
         message = json.dumps(data).encode()
         conn.sendall(message + b"\n")
@@ -88,9 +97,13 @@ def receive_loop():
 
                 if packet["type"] == "grid":
                     opponent_grid = packet["grid"]
+                    #print("GRID RECEIVED", len(opponent_grid))
 
                 elif packet["type"] == "garbage":
                     incoming_garbage += packet["amount"]
+
+                elif packet["type"] == "message":
+                    print("Received message:", packet["message"])
         except:
             break
 
