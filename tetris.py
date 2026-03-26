@@ -71,7 +71,7 @@ def draw_piece(piece, offset_x=0):
                     CELL,
                     CELL
                 )
-                pygame.draw.rect(screen, (0,200,255), rect)
+                pygame.draw.rect(screen, (0,200,255), rect) #(255, 100, 100)
 
 def valid_move(piece, grid, dx=0, dy=0):
     for y, row in enumerate(piece.shape):
@@ -168,7 +168,7 @@ class HardDropEffect:
     def update(self, dt):
         self.timer -= dt
 
-    def draw(self, screen, offset_x=0):
+    def draw(self, screen, offset_x=0, inner=False):
         alpha_factor = self.timer / self.max_timer
         shape = self.piece.shape
         width = len(shape[0])
@@ -191,6 +191,8 @@ class HardDropEffect:
                 surf = pygame.Surface((CELL, CELL))
                 surf.set_alpha(alpha)
                 surf.fill((220, 220, 220))
+                if inner:
+                    surf.fill((215, 155, 215))
 
                 screen.blit(
                     surf,
@@ -295,10 +297,24 @@ def draw_opponent_piece(piece, offset_x):
                 )
                 pygame.draw.rect(screen, (100, 100, 255), rect)
 
+def create_opponent_effect(data):
+    fake_piece = type("FakePiece", (), {})()
+
+    fake_piece.shape = data["shape"]
+    fake_piece.x = data["x"]
+    fake_piece.y = data["start_y"]
+
+    return HardDropEffect(
+        fake_piece,
+        data["start_y"],
+        data["end_y"]
+    )
+
 def run_game(multiplayer=False):
     global screen, clock, font
     global ROWS, COLS, WIDTH, HEIGHT
     global clearing_lines, next_queue
+    global opponent_effects
 
     pygame.init()
     clock = pygame.time.Clock()
@@ -331,6 +347,7 @@ def run_game(multiplayer=False):
     clear_duration = 0.2
     popups = [] #эффект добавления очков
     hard_drop_effects = [] #эффект падения блока
+    opponent_effects = []
 
     while True:
         dt = clock.tick(60) / 1000
@@ -356,6 +373,11 @@ def run_game(multiplayer=False):
                 "y": piece.y
             }
         })
+
+        # создаём эффекты из сети
+        while network.opponent_effects_but_in_network:
+            data = network.opponent_effects_but_in_network.pop(0)
+            opponent_effects.append(create_opponent_effect(data))
 
         # обработка удаления линий
         if clear_timer > 0:
@@ -413,9 +435,14 @@ def run_game(multiplayer=False):
 
                     start_y = piece.y
                     end_y = piece.y + drop_distance
-                    hard_drop_effects.append(
-                        HardDropEffect(piece, start_y, end_y)
-                    )
+                    hard_drop_effects.append( HardDropEffect(piece, start_y, end_y)) #эффект у себя
+                    network.send_data({ #эффект свой для врага
+                        "type": "hard_drop",
+                        "x": piece.x,
+                        "shape": piece.shape,
+                        "start_y": start_y,
+                        "end_y": end_y
+                    })
 
                     piece.y += drop_distance
 
@@ -474,6 +501,12 @@ def run_game(multiplayer=False):
         hard_drop_effects = [e for e in hard_drop_effects if e.timer > 0]
         for effect in hard_drop_effects:
             effect.draw(screen, offset_x=player_offset_x)
+
+        for effect in opponent_effects:
+            effect.update(dt)
+        opponent_effects = [e for e in opponent_effects if e.timer > 0]
+        for effect in opponent_effects:
+            effect.draw(screen, offset_x=0, inner=True)  # ВАЖНО
 
         # мультиплеер рисуем opponent_grid слева
         if multiplayer:
