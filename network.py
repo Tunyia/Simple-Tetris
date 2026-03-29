@@ -22,13 +22,10 @@ def start_server(on_connected, on_status):
     print("HOST")
     def run():
         global server_socket, conn, running
-
         try:
             server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_socket.bind(("0.0.0.0", 12345))
             server_socket.listen(1)
-
-            on_status("Waiting for player...")
 
             conn, _ = server_socket.accept()
             running = True
@@ -36,10 +33,8 @@ def start_server(on_connected, on_status):
             start_receive_thread()
 
             on_connected()
-
         except:
-            on_status("Server error")
-
+            on_status("Server stopped")
     threading.Thread(target=run, daemon=True).start()
 
 # CLIENT
@@ -49,7 +44,6 @@ def start_client(ip, on_success, on_fail):
     print("CLIENT")
     def run():
         global client_socket, conn, running
-
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.settimeout(3)
@@ -63,7 +57,6 @@ def start_client(ip, on_success, on_fail):
             on_success()
         except:
             on_fail()
-
     threading.Thread(target=run, daemon=True).start()
 
 # SEND

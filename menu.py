@@ -18,6 +18,7 @@ def choose_mode():
     #UI state
     waiting_label = None
     cancel_btn = None
+    copy_btn = None
 
     # helpers
     def disable_buttons():
@@ -31,13 +32,16 @@ def choose_mode():
         join_btn.config(state="normal")
 
     def clear_waiting():
-        nonlocal waiting_label, cancel_btn
+        nonlocal waiting_label, cancel_btn, copy_btn
         if waiting_label:
             waiting_label.destroy()
             waiting_label = None
         if cancel_btn:
             cancel_btn.destroy()
             cancel_btn = None
+        if copy_btn:
+            copy_btn.destroy()
+            copy_btn = None
 
     def show_waiting(text):
         nonlocal waiting_label
@@ -50,9 +54,9 @@ def choose_mode():
                 text=text,
                 bg="#0f0f0f",
                 fg="white",
-                font=("Arial", 10)
+                font=("Arial", 12)
             )
-            waiting_label.pack(pady=10)
+            waiting_label.pack(pady=0)
 
     def show_cancel():
         nonlocal cancel_btn
@@ -61,11 +65,37 @@ def choose_mode():
                 root,
                 text="Cancel",
                 command=cancel_action,
-                font=("Arial", 10),
+                font=("Arial", 12),
                 bg="#444444",
-                fg="white"
+                fg="white",
+                width=12,
+                bd=3
             )
             cancel_btn.pack(pady=5)
+
+    def copy_ip(ip):
+        root.clipboard_clear()
+        root.clipboard_append(ip)
+        root.update()
+        show_waiting(f"IP: {ip}\nCopied!")
+
+    def show_copy(ip):
+        nonlocal copy_btn
+
+        if copy_btn:
+            copy_btn.config(command=lambda: copy_ip(ip))
+        else:
+            copy_btn = tk.Button(
+                root,
+                text="Copy IP",
+                command=lambda: copy_ip(ip),
+                font=("Arial", 12),
+                bg="#444444",
+                fg="white",
+                width=12,
+                bd=3
+            )
+            copy_btn.pack(pady=5)
 
     # actions
     def set_single():
@@ -76,7 +106,8 @@ def choose_mode():
         disable_buttons()
 
         ip = get_local_ip()
-        show_waiting(f"Waiting for player...\nIP: {ip}")
+        show_waiting(f"IP: {ip}\nWaiting for player...")
+        show_copy(ip)
         show_cancel()
 
         def on_connected():
@@ -105,9 +136,11 @@ def choose_mode():
             root.after(0, root.destroy)
 
         def on_fail():
-            root.after(0, lambda: show_waiting("Failed to connect"))
-            enable_buttons()
-            clear_waiting()
+            def update_ui():
+                show_waiting("Failed to connect")
+                enable_buttons()
+                root.after(3000, clear_waiting)
+            root.after(0, update_ui)
 
         start_client(ip, on_success, on_fail)
 
