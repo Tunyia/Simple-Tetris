@@ -14,6 +14,7 @@ opponent_grid = None
 incoming_garbage = 0
 opponent_piece = None
 opponent_effects_but_in_network = []
+opponent_lost = False
 
 # SERVER
 def start_server(on_connected, on_status):
@@ -76,7 +77,8 @@ def start_receive_thread():
 
 
 def receive_loop():
-    global opponent_grid, incoming_garbage, running, opponent_piece, opponent_effects_but_in_network
+    global opponent_grid, incoming_garbage, running, opponent_piece, opponent_effects_but_in_network, \
+    opponent_lost
 
     buffer = ""
     while running:
@@ -106,6 +108,9 @@ def receive_loop():
 
                 elif packet["type"] == "hard_drop":
                     opponent_effects_but_in_network.append(packet)
+
+                elif packet["type"] == "game_over":
+                    opponent_lost = True
         except:
             break
 

@@ -19,6 +19,9 @@ font = None
 clearing_lines = []
 next_queue = []
 
+my_name = "Player"
+opponent_name = "Opponent"
+
 SHAPES = [
     [[1,1,1,1]],
 
@@ -348,6 +351,8 @@ def run_game(multiplayer=False):
     popups = [] #эффект добавления очков
     hard_drop_effects = [] #эффект падения блока
     opponent_effects = []
+    game_over = False
+    winner = None  # "me" / "opponent"
 
     while True:
         dt = clock.tick(60) / 1000
@@ -379,6 +384,10 @@ def run_game(multiplayer=False):
             data = network.opponent_effects_but_in_network.pop(0)
             opponent_effects.append(create_opponent_effect(data))
 
+        if network.opponent_lost: # если игра окончена
+            game_over = True
+            winner = "me"
+
         # обработка удаления линий
         if clear_timer > 0:
             clear_timer -= dt
@@ -393,7 +402,6 @@ def run_game(multiplayer=False):
                     popups.append(ScorePopup(10+300+80 + len(f"Score: {score}") * 10, 10, f"+{points}"))
                 else:
                     popups.append(ScorePopup(10 + len(f"Score: {score}") * 10, 10, f"+{points}"))
-
                 clearing_lines = []
 
         # события
@@ -405,54 +413,79 @@ def run_game(multiplayer=False):
             fall_speed = 0.25
             if event.type == pygame.KEYDOWN:
 
-                if event.key == pygame.K_LEFT:
-                    if valid_move(piece, grid, dx=-1):
-                        piece.x -= 1
+                if not game_over:
+                    if event.key == pygame.K_LEFT:
+                        if valid_move(piece, grid, dx=-1):
+                            piece.x -= 1
 
-                if event.key == pygame.K_RIGHT:
-                    if valid_move(piece, grid, dx=1):
-                        piece.x += 1
+                    if event.key == pygame.K_RIGHT:
+                        if valid_move(piece, grid, dx=1):
+                            piece.x += 1
 
-                if event.key == pygame.K_DOWN:
-                    if valid_move(piece, grid, dy=1):
-                        fall_speed = 0.05
+                    if event.key == pygame.K_DOWN:
+                        if valid_move(piece, grid, dy=1):
+                            fall_speed = 0.05
 
-                if event.key == pygame.K_UP:
-                    rotate_with_kick(piece, grid)
+                    if event.key == pygame.K_UP:
+                        rotate_with_kick(piece, grid)
 
-                if event.key == pygame.K_c and can_hold:  # удерживание фигуры
-                    if held_piece is None:
-                        held_piece = copy.deepcopy(piece)
-                        piece = Piece()
-                    else:
-                        held_piece, piece = piece, held_piece
-                        piece.x = COLS // 2
-                        piece.y = 0
-                    can_hold = False
+                    if event.key == pygame.K_c and can_hold:  # удерживание фигуры
+                        if held_piece is None:
+                            held_piece = copy.deepcopy(piece)
+                            piece = Piece()
+                        else:
+                            held_piece, piece = piece, held_piece
+                            piece.x = COLS // 2
+                            piece.y = 0
+                        can_hold = False
 
-                if event.key == pygame.K_SPACE:
-                    drop_distance = get_ghost_y(piece, grid) - piece.y
+                    if event.key == pygame.K_SPACE:
+                        drop_distance = get_ghost_y(piece, grid) - piece.y
 
-                    start_y = piece.y
-                    end_y = piece.y + drop_distance
-                    hard_drop_effects.append( HardDropEffect(piece, start_y, end_y)) #эффект у себя
-                    network.send_data({ #эффект свой для врага
-                        "type": "hard_drop",
-                        "x": piece.x,
-                        "shape": piece.shape,
-                        "start_y": start_y,
-                        "end_y": end_y
-                    })
+                        start_y = piece.y
+                        end_y = piece.y + drop_distance
+                        hard_drop_effects.append( HardDropEffect(piece, start_y, end_y)) #эффект у себя
+                        network.send_data({ #эффект свой для врага
+                            "type": "hard_drop",
+                            "x": piece.x,
+                            "shape": piece.shape,
+                            "start_y": start_y,
+                            "end_y": end_y
+                        })
+                        piece.y += drop_distance
+                        place_piece(piece, grid)  # сразу фиксация
 
-                    piece.y += drop_distance
+                        lines = find_full_lines(grid)
+                        if lines:
+                            clearing_lines = lines
+                            clear_timer = clear_duration
+                            if len(clearing_lines) >= 2: # отправка мусорных линий
+                                garbage = len(clearing_lines) - 1
+                                network.send_data({
+                                    "type": "garbage",
+                                    "amount": garbage
+                                })
 
-                    place_piece(piece, grid)  # сразу фиксация
+                        can_hold = True
+                        piece = get_next_piece()
+
+                if event.type == pygame.KEYDOWN:
+                    if game_over and event.key == pygame.K_RETURN:
+                        return  # выйти из run_game()
+
+        if not game_over:
+            # падение фигуры
+            if fall_time > fall_speed:
+                if valid_move(piece, grid, dy=1):
+                    piece.y += 1
+                else:
+                    place_piece(piece, grid)
 
                     lines = find_full_lines(grid)
                     if lines:
                         clearing_lines = lines
                         clear_timer = clear_duration
-                        if len(clearing_lines) >= 2: # отправка мусорных линий
+                        if len(clearing_lines) >= 2:  # отправка мусорных линий
                             garbage = len(clearing_lines) - 1
                             network.send_data({
                                 "type": "garbage",
@@ -461,34 +494,12 @@ def run_game(multiplayer=False):
 
                     can_hold = True
                     piece = get_next_piece()
+                    if not valid_move(piece, grid):
+                        print("GAME OVER")
+                        game_over = True
+                        network.send_data({"type": "game_over"})
 
-        # падение фигуры
-        if fall_time > fall_speed:
-            if valid_move(piece, grid, dy=1):
-                piece.y += 1
-            else:
-                place_piece(piece, grid)
-
-                lines = find_full_lines(grid)
-                if lines:
-                    clearing_lines = lines
-                    clear_timer = clear_duration
-                    if len(clearing_lines) >= 2:  # отправка мусорных линий
-                        garbage = len(clearing_lines) - 1
-                        network.send_data({
-                            "type": "garbage",
-                            "amount": garbage
-                        })
-
-                can_hold = True
-                piece = get_next_piece()
-
-                if not valid_move(piece, grid):
-                    print("GAME OVER")
-                    pygame.quit()
-                    sys.exit()
-
-            fall_time = 0
+                fall_time = 0
 
         # рисование
         screen.fill((0, 0, 0))
@@ -558,6 +569,34 @@ def run_game(multiplayer=False):
             draw_mini_piece(p, WIDTH - 50, 115 + i * 45)
         next_text = font.render("Next:", True, (255, 255, 255))
         screen.blit(next_text, (WIDTH - 55, 30 + 55))
+
+        name_text = font.render(my_name, True, (255, 255, 255))
+        screen.blit(name_text, (player_offset_x, 0+24))
+
+        enemy_text = font.render(opponent_name, True, (255, 255, 255))
+        screen.blit(enemy_text, (0, 0+24))
+
+        if game_over:
+            overlay = pygame.Surface((WIDTH, HEIGHT))
+            overlay.set_alpha(180)
+            overlay.fill((0, 0, 0))
+            screen.blit(overlay, (0, 0))
+
+            big_font = pygame.font.SysFont("Arial", 48)
+
+            if winner == "me":
+                text = big_font.render("YOU WIN!", True, (0, 255, 100))
+            else:
+                text = big_font.render("GAME OVER", True, (255, 50, 50))
+
+            screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - 60))
+
+            score_text = font.render(f"Score: {score}", True, (255, 255, 255))
+            screen.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, HEIGHT // 2))
+
+            small = pygame.font.SysFont("Arial", 20)
+            txt = small.render("Press ENTER to return to menu", True, (200, 200, 200))
+            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 50))
 
         pygame.display.update()
         clock.tick(60)
