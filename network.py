@@ -1,6 +1,7 @@
 import socket
 import threading
 import json
+import time
 
 server_socket = None
 client_socket = None
@@ -15,6 +16,8 @@ incoming_garbage = 0
 opponent_piece = None
 opponent_effects_but_in_network = []
 opponent_lost = False
+rematch_ready = False
+opponent_score = 0
 
 # SERVER
 def start_server(on_connected, on_status):
@@ -75,17 +78,21 @@ def send_data(data):
 def start_receive_thread():
     threading.Thread(target=receive_loop, daemon=True).start()
 
-
+log_timer = 0
 def receive_loop():
     global opponent_grid, incoming_garbage, running, opponent_piece, opponent_effects_but_in_network, \
-    opponent_lost
+    opponent_lost, rematch_ready, log_timer
+    print(f"{time.strftime("%H:%M:%S", time.localtime())} receive_loop: start!")
 
     buffer = ""
     while running:
         try:
+            log_timer += 1
+            if log_timer > 10:
+                print(f"{time.strftime("%H:%M:%S", time.localtime())} receive_loop: working")
+                log_timer = 0
+
             data = conn.recv(4096).decode()
-            if not data:
-                break
 
             buffer += data
             while "\n" in buffer:
@@ -99,6 +106,7 @@ def receive_loop():
                 elif packet["type"] == "state":
                     opponent_grid = packet["grid"]
                     opponent_piece = packet["piece"]
+                    opponent_score = packet.get("score", 0)
 
                 elif packet["type"] == "garbage":
                     incoming_garbage += packet["amount"]
@@ -111,12 +119,21 @@ def receive_loop():
 
                 elif packet["type"] == "game_over":
                     opponent_lost = True
-        except:
-            break
+
+                elif packet["type"] == "rematch":
+                    rematch_ready = True
+
+                elif packet["type"] == "disconnect":
+                    print("Opponent disconnected")
+                    running = False
+        except Exception as e:
+            print(f"receive_loop error: {e}")
 
 # STOP
 def stop():
     global running, server_socket, client_socket, conn
+    global opponent_grid, incoming_garbage, opponent_piece, opponent_effects_but_in_network
+    global rematch_ready
 
     running = False
 
@@ -137,3 +154,14 @@ def stop():
             client_socket.close()
     except:
         pass
+
+    # СБРОС СОСТОЯНИЯ
+    conn = None
+    server_socket = None
+    client_socket = None
+
+    opponent_grid = None
+    incoming_garbage = 0
+    opponent_piece = None
+    opponent_effects_but_in_network = []
+    rematch_ready = False

@@ -8,6 +8,7 @@ print("Tetris by Tunya")
 CELL = 30
 WIDTH = 300
 HEIGHT = 600
+BASE_WIDTH = 300
 
 ROWS = HEIGHT // CELL
 COLS = WIDTH // CELL
@@ -325,8 +326,9 @@ def run_game(multiplayer=False):
     grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
     if multiplayer:
         opponent_grid = [[0 for _ in range(COLS)] for _ in range(ROWS)]
-        WIDTH = WIDTH * 2 + 80  # 2 поля + пространство под интерфейс
-
+        WIDTH = BASE_WIDTH * 2 + 80  # 2 поля + пространство под интерфейс
+    else:
+        WIDTH = BASE_WIDTH
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("simple-Tetris")
     font = pygame.font.SysFont("Arial", 24)
@@ -353,10 +355,24 @@ def run_game(multiplayer=False):
     opponent_effects = []
     game_over = False
     winner = None  # "me" / "opponent"
+    my_ready = False # сетевые флаги
+    opponent_ready = False
+    #waiting_for_rematch = False
+    network.rematch_ready = False # очистка network-флагов
+    rematch_triggered = False
+
+    network.opponent_grid = None
+    network.opponent_piece = None
+    network.opponent_effects_but_in_network = []
+    network.opponent_lost = False
+    network.opponent_score = 0
+    network_timer = 0
 
     while True:
         dt = clock.tick(60) / 1000
+        dt = min(dt, 0.05)
         fall_time += dt
+        network_timer += dt
 
         if network.incoming_garbage > 0: # завоз входящего мусора
             for _ in range(network.incoming_garbage):
@@ -368,16 +384,19 @@ def run_game(multiplayer=False):
 
                 grid.append(new_row)
             network.incoming_garbage = 0
-
-        network.send_data({ # отправка своего поля + падающая фигура оппоненту
-            "type": "state",
-            "grid": grid,
-            "piece": {
-                "shape": piece.shape,
-                "x": piece.x,
-                "y": piece.y
-            }
-        })
+        if not game_over:
+            if network_timer >= 0.05:
+                network.send_data({ # отправка своего поля + падающая фигура оппоненту
+                    "type": "state",
+                    "grid": grid,
+                    "piece": {
+                        "shape": piece.shape,
+                        "x": piece.x,
+                        "y": piece.y
+                    },
+                    "score": score
+                })
+                network_timer = 0
 
         # создаём эффекты из сети
         while network.opponent_effects_but_in_network:
@@ -387,6 +406,19 @@ def run_game(multiplayer=False):
         if network.opponent_lost: # если игра окончена
             game_over = True
             winner = "me"
+
+        if not network.running and multiplayer: #если связь оборвётся
+            print("Connection lost")
+            pygame.quit()
+            network.stop()
+            return  # выйти в меню
+
+        if network.rematch_ready:
+            opponent_ready = True
+            network.rematch_ready = False
+        if my_ready and opponent_ready and not rematch_triggered:
+            rematch_triggered = True
+            return "rematch"
 
         # обработка удаления линий
         if clear_timer > 0:
@@ -407,7 +439,9 @@ def run_game(multiplayer=False):
         # события
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                network.send_data({"type": "disconnect"})
                 pygame.quit()
+                network.stop()
                 sys.exit()
 
             fall_speed = 0.25
@@ -469,9 +503,17 @@ def run_game(multiplayer=False):
                         can_hold = True
                         piece = get_next_piece()
 
-                if event.type == pygame.KEYDOWN:
-                    if game_over and event.key == pygame.K_RETURN:
-                        return  # выйти из run_game()
+                if game_over and event.key == pygame.K_RETURN:
+                    network.send_data({"type": "disconnect"})
+                    pygame.quit()
+                    network.stop()
+                    return  # выйти из run_game()
+                if game_over and event.key == pygame.K_r:
+                    if not my_ready:
+                        my_ready = True
+                        #waiting_for_rematch = True
+                        network.send_data({ "type": "rematch" })
+                        print("REMATCH")
 
         if not game_over:
             # падение фигуры
@@ -570,11 +612,15 @@ def run_game(multiplayer=False):
         next_text = font.render("Next:", True, (255, 255, 255))
         screen.blit(next_text, (WIDTH - 55, 30 + 55))
 
-        name_text = font.render(my_name, True, (255, 255, 255))
-        screen.blit(name_text, (player_offset_x, 0+24))
+        if multiplayer:
+            name_text = font.render(my_name, True, (255, 255, 255))
+            screen.blit(name_text, (player_offset_x+10, 10+24))
 
-        enemy_text = font.render(opponent_name, True, (255, 255, 255))
-        screen.blit(enemy_text, (0, 0+24))
+            enemy_name_text = font.render(opponent_name, True, (255, 255, 255))
+            screen.blit(enemy_name_text, (10, 10+24))
+        else:
+            name_text = font.render(my_name, True, (255, 255, 255))
+            screen.blit(name_text, (0+10, 10+24))
 
         if game_over:
             overlay = pygame.Surface((WIDTH, HEIGHT))
@@ -583,20 +629,36 @@ def run_game(multiplayer=False):
             screen.blit(overlay, (0, 0))
 
             big_font = pygame.font.SysFont("Arial", 48)
+            small_font = pygame.font.SysFont("Arial", 24)
 
             if winner == "me":
-                text = big_font.render("YOU WIN!", True, (0, 255, 100))
+                title = big_font.render("YOU WIN!", True, (0, 255, 100))
             else:
-                text = big_font.render("GAME OVER", True, (255, 50, 50))
+                title = big_font.render("GAME OVER", True, (255, 50, 50))
 
-            screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - 60))
+            screen.blit(title, (WIDTH // 2 - title.get_width() // 2, HEIGHT // 2 - 100))
 
-            score_text = font.render(f"Score: {score}", True, (255, 255, 255))
-            screen.blit(score_text, (WIDTH // 2 - score_text.get_width() // 2, HEIGHT // 2))
+            # имена
+            p1 = small_font.render(f"{my_name}: {score}", True, (255, 255, 255))
+            screen.blit(p1, (WIDTH // 2 - p1.get_width() // 2, HEIGHT // 2 - 30))
 
-            small = pygame.font.SysFont("Arial", 20)
-            txt = small.render("Press ENTER to return to menu", True, (200, 200, 200))
-            screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 50))
+            if multiplayer:
+                p2 = small_font.render(f"{opponent_name}: {network.opponent_score}", True, (255, 255, 255))
+                screen.blit(p2, (WIDTH // 2 - p2.get_width() // 2, HEIGHT // 2))
+
+            # кнопки
+            enter = small_font.render("Press ENTER to return to menu", True, (200, 200, 200))
+            screen.blit(enter, (WIDTH // 2 - enter.get_width() // 2, HEIGHT // 2 + 50))
+
+            if not my_ready:
+                txt = small_font.render("Press R for rematch", True, (200, 200, 200))
+                screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
+            else:
+                txt = small_font.render("Waiting for opponent...", True, (255, 200, 100))
+                screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
+            if opponent_ready:
+                txt2 = small_font.render("Opponent ready for rematch!", True, (100, 255, 100))
+                screen.blit(txt2, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
 
         pygame.display.update()
         clock.tick(60)
