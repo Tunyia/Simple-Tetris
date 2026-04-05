@@ -413,9 +413,8 @@ def run_game(multiplayer=False):
             network.stop()
             return  # выйти в меню
 
-        if network.rematch_ready:
-            opponent_ready = True
-            network.rematch_ready = False
+        opponent_ready = network.rematch_ready
+
         if my_ready and opponent_ready and not rematch_triggered:
             rematch_triggered = True
             return "rematch"
@@ -509,11 +508,13 @@ def run_game(multiplayer=False):
                     network.stop()
                     return  # выйти из run_game()
                 if game_over and event.key == pygame.K_r:
-                    if not my_ready:
-                        my_ready = True
-                        #waiting_for_rematch = True
-                        network.send_data({ "type": "rematch" })
-                        print("REMATCH")
+                    my_ready = not my_ready
+                    #waiting_for_rematch = my_ready
+                    network.send_data({
+                        "type": "rematch",
+                        "ready": my_ready
+                    })
+                    print(f"REMATCH?: {my_ready}")
 
         if not game_over:
             # падение фигуры

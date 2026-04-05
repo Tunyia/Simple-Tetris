@@ -121,7 +121,7 @@ def receive_loop():
                     opponent_lost = True
 
                 elif packet["type"] == "rematch":
-                    rematch_ready = True
+                    rematch_ready = packet.get("ready", False)
 
                 elif packet["type"] == "disconnect":
                     print("Opponent disconnected")
