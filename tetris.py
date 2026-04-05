@@ -508,13 +508,17 @@ def run_game(multiplayer=False):
                     network.stop()
                     return  # выйти из run_game()
                 if game_over and event.key == pygame.K_r:
-                    my_ready = not my_ready
-                    #waiting_for_rematch = my_ready
-                    network.send_data({
-                        "type": "rematch",
-                        "ready": my_ready
-                    })
-                    print(f"REMATCH?: {my_ready}")
+                    if multiplayer:
+                        my_ready = not my_ready
+                        #waiting_for_rematch = my_ready
+                        network.send_data({
+                            "type": "rematch",
+                            "ready": my_ready
+                        })
+                        print(f"REMATCH?: {my_ready}")
+                    else:
+                        return "rematch"
+                        print("RESTART")
 
         if not game_over:
             # падение фигуры
@@ -654,7 +658,10 @@ def run_game(multiplayer=False):
             screen.blit(emoji_img, (WIDTH // 2 - enter.get_width() // 2, HEIGHT // 2 + 50))
 
             if not my_ready:
-                txt = small_font.render("       Press R for rematch", True, (200, 200, 200))
+                if multiplayer:
+                    txt = small_font.render("       Press R for rematch", True, (200, 200, 200))
+                else:
+                    txt = small_font.render("       Press R for restart", True, (200, 200, 200))
                 screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
                 emoji_img = pygame.transform.scale(pygame.image.load("emojes/reload.png").convert_alpha(), (24, 24))
                 screen.blit(emoji_img, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
