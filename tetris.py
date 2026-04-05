@@ -647,18 +647,26 @@ def run_game(multiplayer=False):
                 screen.blit(p2, (WIDTH // 2 - p2.get_width() // 2, HEIGHT // 2))
 
             # кнопки
-            enter = small_font.render("Press ENTER to return to menu", True, (200, 200, 200))
+            enter = small_font.render("       Press ENTER to return to menu", True, (200, 200, 200))
             screen.blit(enter, (WIDTH // 2 - enter.get_width() // 2, HEIGHT // 2 + 50))
+            emoji_img = pygame.transform.scale( pygame.image.load("emojes/back.png").convert_alpha(), (24, 24))
+            screen.blit(emoji_img, (WIDTH // 2 - enter.get_width() // 2, HEIGHT // 2 + 50))
 
             if not my_ready:
-                txt = small_font.render("Press R for rematch", True, (200, 200, 200))
+                txt = small_font.render("       Press R for rematch", True, (200, 200, 200))
                 screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
+                emoji_img = pygame.transform.scale(pygame.image.load("emojes/reload.png").convert_alpha(), (24, 24))
+                screen.blit(emoji_img, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
             else:
-                txt = small_font.render("Waiting for opponent...", True, (255, 200, 100))
+                txt = small_font.render("       Waiting for opponent...", True, (255, 200, 100))
                 screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
+                emoji_img = pygame.transform.scale(pygame.image.load("emojes/warn.png").convert_alpha(), (24, 24))
+                screen.blit(emoji_img, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
             if opponent_ready:
-                txt2 = small_font.render("Opponent ready for rematch!", True, (100, 255, 100))
+                txt2 = small_font.render("       Opponent ready for rematch!", True, (100, 255, 100))
                 screen.blit(txt2, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
+                emoji_img = pygame.transform.scale(pygame.image.load("emojes/aprove.png").convert_alpha(), (24, 24))
+                screen.blit(emoji_img, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
 
         pygame.display.update()
         clock.tick(60)
