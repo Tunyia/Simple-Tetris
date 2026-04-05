@@ -368,11 +368,29 @@ def run_game(multiplayer=False):
     network.opponent_score = 0
     network_timer = 0
 
+    EASING = 15
+    curtain_y = 0  # экран изначально закрыт
+    curtain_opening = True
+    curtain_closing = False
+
     while True:
         dt = clock.tick(60) / 1000
         dt = min(dt, 0.05)
         fall_time += dt
         network_timer += dt
+
+        if curtain_closing:
+            target = 0
+            curtain_y += (target - curtain_y) * EASING * dt * 1.1
+            if abs(curtain_y - target) < 15:
+                curtain_y = target
+                return "rematch"
+        if curtain_opening:
+            target = -HEIGHT
+            curtain_y += (target - curtain_y) * EASING * dt * 1.1
+            if abs(curtain_y - target) < 15:
+                curtain_y = target
+                curtain_opening = False
 
         if network.incoming_garbage > 0: # завоз входящего мусора
             for _ in range(network.incoming_garbage):
@@ -417,7 +435,7 @@ def run_game(multiplayer=False):
 
         if my_ready and opponent_ready and not rematch_triggered:
             rematch_triggered = True
-            return "rematch"
+            curtain_closing = True  #return "rematch"
 
         # обработка удаления линий
         if clear_timer > 0:
@@ -517,7 +535,7 @@ def run_game(multiplayer=False):
                         })
                         print(f"REMATCH?: {my_ready}")
                     else:
-                        return "rematch"
+                        curtain_closing = True #return "rematch"
                         print("RESTART")
 
         if not game_over:
@@ -675,6 +693,9 @@ def run_game(multiplayer=False):
                 screen.blit(txt2, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
                 emoji_img = pygame.transform.scale(pygame.image.load("emojes/aprove.png").convert_alpha(), (24, 24))
                 screen.blit(emoji_img, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
+
+        curtain = pygame.Rect(0, curtain_y, WIDTH, HEIGHT)
+        pygame.draw.rect(screen, (0, 0, 0), curtain)
 
         pygame.display.update()
         clock.tick(60)
