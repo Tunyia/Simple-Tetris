@@ -20,7 +20,7 @@ rematch_ready = False
 opponent_score = 0
 
 # SERVER
-def start_server(on_connected, on_status):
+def start_server(on_connected, on_status, on_port):
     global role
     role = "host"
     print("HOST")
@@ -28,8 +28,14 @@ def start_server(on_connected, on_status):
         global server_socket, conn, running
         try:
             server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.bind(("0.0.0.0", 12345))
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                server_socket.bind(("0.0.0.0", 12345))
+            except:
+                server_socket.bind(("0.0.0.0", 0))
             server_socket.listen(1)
+            port = server_socket.getsockname()[1]
+            on_port(port)  #сообщаем UI
 
             conn, _ = server_socket.accept()
             running = True
@@ -42,7 +48,7 @@ def start_server(on_connected, on_status):
     threading.Thread(target=run, daemon=True).start()
 
 # CLIENT
-def start_client(ip, on_success, on_fail):
+def start_client(ip, port, on_success, on_fail):
     global role
     role = "client"
     print("CLIENT")
@@ -51,7 +57,7 @@ def start_client(ip, on_success, on_fail):
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.settimeout(3)
-            client_socket.connect((ip, 12345))
+            client_socket.connect((ip, port))
 
             conn = client_socket
             running = True

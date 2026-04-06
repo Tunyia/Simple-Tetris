@@ -6,7 +6,7 @@ def get_local_ip():
     try:
         return socket.gethostbyname(socket.gethostname())
     except:
-        return "127.0.0.1"
+        return "127.0.0.1:12345"
 
 # MENU
 def choose_mode():
@@ -24,12 +24,14 @@ def choose_mode():
     def disable_buttons():
         single_btn.config(state="disabled")
         host_btn.config(state="disabled")
-        join_btn.config(state="disabled")
+        join_btn_left.config(state="disabled")
+        join_btn_right.config(state="disabled")
 
     def enable_buttons():
         single_btn.config(state="normal")
         host_btn.config(state="normal")
-        join_btn.config(state="normal")
+        join_btn_left.config(state="normal")
+        join_btn_right.config(state="normal")
 
     def clear_waiting():
         nonlocal waiting_label, cancel_btn, copy_btn
@@ -50,7 +52,7 @@ def choose_mode():
             waiting_label.config(text=text)
         else:
             waiting_label = tk.Label(
-                root,
+                left_frame,
                 text=text,
                 bg="#0f0f0f",
                 fg="white",
@@ -62,7 +64,7 @@ def choose_mode():
         nonlocal cancel_btn
         if not cancel_btn:
             cancel_btn = tk.Button(
-                root,
+                left_frame,
                 text="Cancel",
                 command=cancel_action,
                 font=("Arial", 12),
@@ -86,7 +88,7 @@ def choose_mode():
             copy_btn.config(command=lambda: copy_ip(ip))
         else:
             copy_btn = tk.Button(
-                root,
+                left_frame,
                 text="Copy IP",
                 command=lambda: copy_ip(ip),
                 font=("Arial", 12),
@@ -106,29 +108,29 @@ def choose_mode():
         disable_buttons()
 
         ip = get_local_ip()
-        show_waiting(f"IP: {ip}\nWaiting for player...")
-        show_copy(ip)
-        show_cancel()
-
+        port_holder = {"port": None}
+        def on_port(port):
+            port_holder["port"] = port  # сохраняем
+            root.after(0, lambda: show_waiting(f"IP: {ip}:{port}\nWaiting for player..."))
+            root.after(0, lambda: show_copy(f"{ip}:{port}"))
+            root.after(0, show_cancel)
         def on_connected():
             result["mode"] = "host"
+            result["ip"] = f"{ip}:{port_holder['port']}"  # ← теперь работает
             root.after(0, root.destroy)
-
         def on_status(text):
             root.after(0, lambda: show_waiting(text))
-
-        start_server(on_connected, on_status)
+        start_server(on_connected, on_status, on_port)
 
     def set_join():
-        ip = ip_entry.get().strip()
+        ip_text = ip_entry.get().strip()
 
-        if not ip:
-            show_waiting("Enter IP")
+        if ":" not in ip_text:
+            show_waiting("Use IP:PORT")
             return
 
-        disable_buttons()
-        show_waiting("Connecting...")
-        show_cancel()
+        ip, port = ip_text.split(":")
+        port = int(port)
 
         def on_success():
             result["mode"] = "join"
@@ -142,19 +144,30 @@ def choose_mode():
                 root.after(3000, clear_waiting)
             root.after(0, update_ui)
 
-        start_client(ip, on_success, on_fail)
+        start_client(ip, port, on_success, on_fail)
 
     def cancel_action():
         stop()
         enable_buttons()
         clear_waiting()
+        print("Cancelled")  # для проверки
 
     # UI
     root = tk.Tk()
     root.title("Tetris")
-    root.geometry("200x360")
+    root.geometry("500x360")
     root.resizable(False, False)
     root.configure(bg="#0f0f0f")
+
+    #фреймы!!
+    main_frame = tk.Frame(root, bg="#0f0f0f")
+    main_frame.pack(fill="both", expand=True)
+
+    left_frame = tk.Frame(main_frame, bg="#1a1a1a", width=200)
+    left_frame.pack(side="left", fill="y", expand=True)
+
+    right_frame = tk.Frame(main_frame, bg="#1a1a1a", width=300)
+    right_frame.pack(side="right", fill="y", expand=True)
 
     # центр
     root.update_idletasks()
@@ -183,20 +196,117 @@ def choose_mode():
     #    fg="white"
     #).pack(pady=15)
 
-    single_btn = tk.Button(root, text="Single Player", command=set_single, **BTN)
+    single_btn = tk.Button(left_frame, text="Single Player", command=set_single, **BTN)
     single_btn.pack(pady=(15, 5))
 
-    host_btn = tk.Button(root, text="Host Game", command=set_host, **BTN)
+    host_btn = tk.Button(left_frame, text="Host Game", command=set_host, **BTN)
     host_btn.pack(pady=5)
 
-    tk.Label(root, text="Server IP:", bg="#0f0f0f", fg="white", font=("Arial", 10)).pack(pady=(15, 0))
+    tk.Label(left_frame, text="Server IP:", bg="#0f0f0f", fg="white", font=("Arial", 10)).pack(pady=(15, 0))
 
-    ip_entry = tk.Entry(root, font=("Arial", 12), width=20)
-    ip_entry.insert(0, "127.0.0.1")
+    ip_entry = tk.Entry(left_frame, font=("Arial", 12), width=20)
+    ip_entry.insert(0, "127.0.0.1:12345")
     ip_entry.pack(pady=5)
 
-    join_btn = tk.Button(root, text="Join Game", command=set_join, **BTN)
-    join_btn.pack(pady=5)
+    join_btn_left = tk.Button(left_frame, text="Join Game", command=set_join, **BTN)
+    join_btn_left.pack(pady=5)
+
+    # SERVER UI - right frame
+    # Заголовок
+    tk.Label(
+        right_frame,
+        text="ONLINE",
+        font=("Arial", 16, "bold"),
+        bg="#1a1a1a",
+        fg="white"
+    ).pack(pady=0)
+
+    # Никнейм
+    tk.Label(
+        right_frame,
+        text="Nickname",
+        bg="#1a1a1a",
+        fg="#cccccc"
+    ).pack()
+
+    nickname_entry = tk.Entry(
+        right_frame,
+        font=("Arial", 12),
+        justify="center"
+    )
+    nickname_entry.insert(0, "Player")
+    nickname_entry.pack(pady=(0, 0), ipadx=5, ipady=0)
+
+    # Статус сервера
+    server_status = tk.Label(
+        right_frame,
+        text="Server: WIP",
+        bg="#1a1a1a",
+        fg="red",
+        font=("Arial", 10, "bold")
+    )
+    server_status.pack(pady=(0, 0))
+
+    def update_server_status(online=True):
+        if online:
+            server_status.config(text="Server: WIP", fg="lightgreen")
+        else:
+            server_status.config(text="Server: WIP", fg="red")
+
+    update_server_status(False) #пока заглушка
+
+    def create_game(): # создать игру
+        print("Create game (WIP)")
+
+    tk.Button(
+        right_frame,
+        text="Create Game",
+        command=create_game,
+        **BTN
+    ).pack(pady=(5, 0))
+
+    # список игр
+    tk.Label(right_frame, text="Games", bg="#1a1a1a", fg="white").pack()
+
+    games_listbox = tk.Listbox(
+        right_frame,
+        height=6,
+        font=("Consolas", 8),
+        selectborderwidth=4,
+        bg="#222222",
+        fg="white",
+        selectbackground="#222222",
+        borderwidth=4,
+        activestyle="none"
+    )
+    games_listbox.pack(padx=0, pady=0, fill="x")
+
+    # тестовые данные
+    games_listbox.delete(0, tk.END)
+    for i in range(10):
+        games_listbox.insert(
+            tk.END,
+            f"Test{i:<3}  waiting...   1/2"
+        )
+
+    # зайти в игру
+    def join_game():
+        selection = games_listbox.curselection()
+        if not selection:
+            return
+        game = games_listbox.get(selection[0])
+        print("Joining:", game)
+
+    join_btn_right= tk.Button(right_frame, text="Join Game", command=join_game, **BTN, state="disabled")
+    join_btn_right.pack(pady=(5, 10))
+
+    def on_select(event):
+        if games_listbox.curselection():
+            join_btn_right.config(state="normal")
+        else:
+            join_btn_right.config(state="disabled")
+
+    games_listbox.bind("<<ListboxSelect>>", on_select)
 
     root.mainloop()
     return result
