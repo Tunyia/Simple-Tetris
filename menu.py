@@ -1,6 +1,13 @@
 import tkinter as tk
 import socket
 from network import start_server, start_client, stop
+import threading
+import json
+import time
+
+server_conn = None
+server_connected = False
+server_games = []
 
 def get_local_ip():
     try:
@@ -152,6 +159,65 @@ def choose_mode():
         clear_waiting()
         print("Cancelled")  # для проверки
 
+    def server_connection_loop():
+        global server_conn, server_connected
+        while True:
+            if not server_connected:
+                try:
+                    print("Trying to connect...")
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.connect(("127.0.0.1", 5555))
+                    s.settimeout(None)  # ВАЖНО! делаем блокирующий сокет обратно
+
+                    server_conn = s
+                    server_connected = True
+
+                    root.after(0, lambda: update_server_status(True))
+
+                    threading.Thread(target=server_receive_loop, daemon=True).start()
+                    request_games()
+                    print("Connected!")
+                except Exception as e:
+                    print("Connect failed:", e)
+                    server_connected = False
+                    root.after(0, lambda: update_server_status(False))
+
+            time.sleep(2)
+
+    def server_receive_loop():
+        global server_connected, server_conn
+        buffer = ""
+        while True:
+            try:
+                data = server_conn.recv(4096)
+                if not data:
+                    raise Exception("Disconnected")
+                buffer += data.decode()
+                while "\n" in buffer:
+                    msg, buffer = buffer.split("\n", 1)
+                    packet = json.loads(msg)
+                    if packet["type"] == "games":
+                        server_games[:] = packet["games"]
+                        root.after(0, refresh_games_list)
+            except socket.timeout:
+                continue
+            except Exception as e:
+                print("Receive error:", e)
+                server_connected = False
+                try:
+                    server_conn.close()
+                except:
+                    pass
+                server_conn = None
+                root.after(0, lambda: update_server_status(False))
+                break
+
+    def request_games():
+        if server_conn:
+            server_conn.sendall(json.dumps({
+                "type": "get_games"
+            }).encode() + b"\n")
+
     # UI
     root = tk.Tk()
     root.title("Tetris")
@@ -249,21 +315,32 @@ def choose_mode():
 
     def update_server_status(online=True):
         if online:
-            server_status.config(text="Server: WIP", fg="lightgreen")
+            server_status.config(text="Server: online WIP", fg="lightgreen")
         else:
-            server_status.config(text="Server: WIP", fg="red")
+            server_status.config(text="Server: offline WIP", fg="red")
+        update_buttons_state()
 
-    update_server_status(False) #пока заглушка
+    def create_game():
+        if not server_connected or not server_conn:
+            print("No server connection")
+            return
+        name = nickname_entry.get().strip()
+        if not name:
+            return
+        server_conn.sendall(json.dumps({
+            "type": "create_game",
+            "name": name
+        }).encode() + b"\n")
 
-    def create_game(): # создать игру
-        print("Create game (WIP)")
+    create_btn = tk.Button(right_frame,text="Create Game",command=create_game,**BTN)
+    create_btn.pack(pady=(5, 0))
 
-    tk.Button(
-        right_frame,
-        text="Create Game",
-        command=create_game,
-        **BTN
-    ).pack(pady=(5, 0))
+    def update_buttons_state():
+        if server_connected:
+            create_btn.config(state="normal")
+        else:
+            create_btn.config(state="disabled")
+            join_btn_right.config(state="disabled")
 
     # список игр
     tk.Label(right_frame, text="Games", bg="#1a1a1a", fg="white").pack()
@@ -281,21 +358,26 @@ def choose_mode():
     )
     games_listbox.pack(padx=0, pady=0, fill="x")
 
-    # тестовые данные
-    games_listbox.delete(0, tk.END)
-    for i in range(10):
-        games_listbox.insert(
-            tk.END,
-            f"Test{i:<3}  waiting...   1/2"
-        )
+    # уже не тестовые данные
+    def refresh_games_list():
+        games_listbox.delete(0, tk.END)
+        for g in server_games:
+            text = f"{g['name']:<10}  {g['players']}/2"
+            games_listbox.insert(tk.END, text)
 
     # зайти в игру
     def join_game():
+        if not server_connected or not server_conn:
+            return
         selection = games_listbox.curselection()
         if not selection:
             return
-        game = games_listbox.get(selection[0])
-        print("Joining:", game)
+        index = selection[0]
+        game = server_games[index]
+        server_conn.sendall(json.dumps({
+            "type": "join_game",
+            "id": game["id"]
+        }).encode() + b"\n")
 
     join_btn_right= tk.Button(right_frame, text="Join Game", command=join_game, **BTN, state="disabled")
     join_btn_right.pack(pady=(5, 10))
@@ -305,8 +387,9 @@ def choose_mode():
             join_btn_right.config(state="normal")
         else:
             join_btn_right.config(state="disabled")
-
     games_listbox.bind("<<ListboxSelect>>", on_select)
+
+    threading.Thread(target=server_connection_loop, daemon=True).start()
 
     root.mainloop()
     return result
