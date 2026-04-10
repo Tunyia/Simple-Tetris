@@ -2,26 +2,23 @@ from menu import choose_mode
 from tetris import run_game
 
 while True:
+    # 1. Открываем меню
     mode_data = choose_mode()
 
-    mode = mode_data["mode"]
-    ip = mode_data["ip"]
+    # Если нажали "Cancel" или закрыли крестиком
+    if not mode_data or mode_data["mode"] is None:
+        break
 
-    if mode is None:
-        break  # выход из программы
+    current_mode = mode_data["mode"]
 
+    # 2. Игровой цикл
     while True:
-        if mode == "single":
-            result = run_game(multiplayer=False)
-        elif mode == "host":
-            result = run_game(multiplayer=True)
-        elif mode == "join":
-            result = run_game(multiplayer=True)
-        else:
-            break
+        # запуск игры
+        is_multi = (current_mode != "single")
+        result = run_game(multiplayer=is_multi)
 
-        # обработка результата игры
+        # после окончания игры обработка результата
         if result == "rematch":
-            continue  # перезапустить игру
-
-        break  # выйти в меню
+            continue  # перезапускаем игру (остаемся во внутреннем цикле)
+        else:
+            break  # выходим из игры (прерываем внутренний цикл -> вернемся в меню)

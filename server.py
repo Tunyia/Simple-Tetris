@@ -31,7 +31,7 @@ def handle_client(conn):
         try:
             data = conn.recv(4096)
             if not data:
-                continue  # ← ВАЖНО
+                break  # Разрываем цикл, клиент отключился
             buffer += data.decode()
             while "\n" in buffer:
                 msg, buffer = buffer.split("\n", 1)
