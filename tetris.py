@@ -3,6 +3,7 @@ import sys
 import copy
 import random
 import network
+import os
 print("Tetris by Tunya")
 
 CELL = 30
@@ -313,6 +314,15 @@ def create_opponent_effect(data):
         data["start_y"],
         data["end_y"]
     )
+
+def resource_path(relative_path):
+    """ Получает абсолютный путь к ресурсам, работает для dev и для PyInstaller """
+    try:
+        # PyInstaller создает временную папку _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 def run_game(multiplayer=False):
     global screen, clock, font
@@ -672,7 +682,7 @@ def run_game(multiplayer=False):
             # кнопки
             enter = small_font.render("       Press ENTER to return to menu", True, (200, 200, 200))
             screen.blit(enter, (WIDTH // 2 - enter.get_width() // 2, HEIGHT // 2 + 50))
-            emoji_img = pygame.transform.scale( pygame.image.load("emojes/back.png").convert_alpha(), (24, 24))
+            emoji_img = pygame.transform.scale( pygame.image.load(resource_path("emojes/back.png")).convert_alpha(), (24, 24))
             screen.blit(emoji_img, (WIDTH // 2 - enter.get_width() // 2, HEIGHT // 2 + 50))
 
             if not my_ready:
@@ -681,17 +691,17 @@ def run_game(multiplayer=False):
                 else:
                     txt = small_font.render("       Press R for restart", True, (200, 200, 200))
                 screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
-                emoji_img = pygame.transform.scale(pygame.image.load("emojes/reload.png").convert_alpha(), (24, 24))
+                emoji_img = pygame.transform.scale(pygame.image.load(resource_path("emojes/reload.png")).convert_alpha(), (24, 24))
                 screen.blit(emoji_img, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
             else:
                 txt = small_font.render("       Waiting for opponent...", True, (255, 200, 100))
                 screen.blit(txt, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
-                emoji_img = pygame.transform.scale(pygame.image.load("emojes/warn.png").convert_alpha(), (24, 24))
+                emoji_img = pygame.transform.scale(pygame.image.load(resource_path("emojes/warn.png")).convert_alpha(), (24, 24))
                 screen.blit(emoji_img, (WIDTH // 2 - txt.get_width() // 2, HEIGHT // 2 + 80))
             if opponent_ready:
                 txt2 = small_font.render("       Opponent ready for rematch!", True, (100, 255, 100))
                 screen.blit(txt2, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
-                emoji_img = pygame.transform.scale(pygame.image.load("emojes/aprove.png").convert_alpha(), (24, 24))
+                emoji_img = pygame.transform.scale(pygame.image.load(resource_path("emojes/aprove.png")).convert_alpha(), (24, 24))
                 screen.blit(emoji_img, (WIDTH // 2 - txt2.get_width() // 2, HEIGHT // 2 + 110))
 
         curtain = pygame.Rect(0, curtain_y, WIDTH, HEIGHT)
