@@ -1,24 +1,27 @@
+import pygame
 from menu import choose_mode
-from tetris import run_game
+from tetris import TetrisGame
 
 while True:
-    # 1. Открываем меню
+    pygame.init()
+    # Открываем меню
     mode_data = choose_mode()
 
-    # Если нажали "Cancel" или закрыли крестиком
+    # 1. Если нажали "Cancel" или закрыли крестиком
     if not mode_data or mode_data["mode"] is None:
         break
 
     current_mode = mode_data["mode"]
+    is_multi = (current_mode != "single")
 
-    # 2. Игровой цикл
+    # 2. Игровой цикл (обработка реваншей)
     while True:
-        # запуск игры
-        is_multi = (current_mode != "single")
-        result = run_game(multiplayer=is_multi)
+        game = TetrisGame(multiplayer=is_multi)
+        result = game.run()
 
-        # после окончания игры обработка результата
         if result == "rematch":
-            continue  # перезапускаем игру (остаемся во внутреннем цикле)
+            pygame.display.quit()
+            continue # внутренний цикл сработает снова, создав новый объект TetrisGame
         else:
-            break  # выходим из игры (прерываем внутренний цикл -> вернемся в меню)
+            break # менюшка
+pygame.quit()
