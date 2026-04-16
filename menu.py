@@ -1,6 +1,6 @@
 import tkinter as tk
 import socket
-from network import start_server, start_client, stop
+from network import NetworkManager
 import threading
 import json
 import time
@@ -25,7 +25,8 @@ def choose_mode():
 
     result = {
         "mode": None,
-        "ip": ""
+        "ip": "127.0.0.1",
+        "port": 12345
     }
 
     # UI variables
@@ -54,32 +55,22 @@ def choose_mode():
     process_ui_queue()
 
     # БЕЗОПАСНЫЙ ВЫХОД!! очень важная шняга
-    def safe_exit(mode=None, ip=""):
+    def safe_exit(mode=None, ip="", port=12345):  # Добавим порт в аргументы
         nonlocal menu_running, after_id
-        global server_conn, server_connected
-
         menu_running = False
+
         result["mode"] = mode
         result["ip"] = ip
+        result["port"] = port
 
-        # 1. Отменяем запланированный вызов очереди, чтобы избежать спама в консоли
         if after_id:
             try:
                 root.after_cancel(after_id)
             except:
                 pass
 
-        # 2. Жёстко убиваем сокет лобби.
-        if server_conn:
-            try:
-                server_conn.close()
-            except:
-                pass
-            server_conn = None
-            server_connected = False
-
-        # 3. Останавливаем mainloop
         root.quit()
+        root.destroy()
 
     # Перехватываем нажатие на крестик окна
     root.protocol("WM_DELETE_WINDOW", lambda: safe_exit(None))
@@ -135,6 +126,8 @@ def choose_mode():
     def set_single():
         safe_exit("single")
 
+    net_manager = NetworkManager()
+
     def set_host():
         ip = get_local_ip()
         port_holder = {"port": None}
@@ -145,23 +138,25 @@ def choose_mode():
                 ui_queue.put(lambda: show_waiting(f"IP: {ip}:{port}\nWaiting for player..."))
                 ui_queue.put(lambda: show_copy(f"{ip}:{port}"))
                 ui_queue.put(show_cancel)
+            pass
 
         def on_connected():
             if menu_running:
-                ui_queue.put(lambda: safe_exit("host", f"{ip}:{port_holder['port']}"))
+                # Передаем данные хоста
+                ui_queue.put(lambda: safe_exit("host", ip))
 
         def on_status(text):
             if menu_running:
                 ui_queue.put(lambda: show_waiting(text))
 
-        start_server(on_connected, on_status, on_port)
+        net_manager.start_server(on_connected, on_status, on_port)
 
     def set_join():
         ip_text = ip_entry.get().strip()
         if ":" not in ip_text:
             show_waiting("Use IP:PORT")
             return
-        ip, port = ip_text.split(":")
+        ip, port_str = ip_text.split(":")
 
         def on_success():
             if menu_running:
@@ -172,10 +167,13 @@ def choose_mode():
                 ui_queue.put(lambda: show_waiting("Failed to connect"))
                 ui_queue.put(enable_buttons)
 
-        start_client(ip, int(port), on_success, on_fail)
+        try:
+            net_manager.start_client(ip, int(port_str), on_success, on_fail)
+        except ValueError:
+            show_waiting("Invalid Port")
 
     def cancel_action():
-        stop()
+        net_manager.stop()
         enable_buttons()
         clear_waiting()
 
@@ -347,5 +345,23 @@ def choose_mode():
 
     root.mainloop()
 
-    root.destroy()
-    return result
+    final_ip = "127.0.0.1"
+    final_port = 12345
+
+    if result["ip"] and ":" in str(result["ip"]):
+        try:
+            parts = result["ip"].split(":")
+            final_ip = parts[0]
+            final_port = int(parts[1])
+        except:
+            pass
+    elif result["ip"]:
+        final_ip = result["ip"]
+
+    # Возвращаем данные. Теперь main.py получит всё, что нужно.
+    return {
+        "mode": result["mode"],
+        "ip": result["ip"],
+        "port": result.get("port", 12345),
+        "network": net_manager
+    }

@@ -271,10 +271,11 @@ class HardDropEffect:
 
 # ОСНОВНОЙ КЛАСС ИГРЫ
 class TetrisGame:
-    def __init__(self, multiplayer=False):
+    def __init__(self, multiplayer=False, network_manager=None):
         # Настройки экрана и ресурсов
         self.game_running = False
         self.multiplayer = multiplayer
+        self.network = network_manager
         self.my_name = "Player"
         self.opponent_name = "Opponent"
 
@@ -376,20 +377,20 @@ class TetrisGame:
         self.piece.y = old_y
 
     def reset_network_state(self):
-        network.rematch_ready = False
-        network.opponent_grid = None
-        network.opponent_piece = None
-        network.opponent_effects_but_in_network = []
-        network.opponent_lost = False
-        network.opponent_score = 0
-        network.incoming_garbage = 0
+        self.network.rematch_ready = False
+        self.network.opponent_grid = None
+        self.network.opponent_piece = None
+        self.network.opponent_effects_but_in_network = []
+        self.network.opponent_lost = False
+        self.network.opponent_score = 0
+        self.network.incoming_garbage = 0
 
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                network.send_data({"type": "disconnect"})
+                self.network.send_data({"type": "disconnect"})
                 pygame.quit()
-                network.stop()
+                self.network.stop()
                 sys.exit()
 
             if event.type == pygame.KEYDOWN:
@@ -413,14 +414,14 @@ class TetrisGame:
 
     def handle_menu_input(self, key):
         if key == pygame.K_RETURN:
-            network.send_data({"type": "disconnect"})
-            network.stop()
+            self.network.send_data({"type": "disconnect"})
+            self.network.stop()
             pygame.display.quit() # Закрываем именно видео-подсистему (окно исчезнет)
             self.game_running = False # Выходим из цикла run()
         if key == pygame.K_r:
             if self.multiplayer:
                 self.my_ready = not self.my_ready
-                network.send_data({"type": "rematch", "ready": self.my_ready})
+                self.network.send_data({"type": "rematch", "ready": self.my_ready})
             else:
                 self.curtain_closing = True
 
@@ -438,7 +439,7 @@ class TetrisGame:
         start_y, end_y = self.piece.y, self.piece.y + drop_dist
 
         self.hard_drop_effects.append(HardDropEffect(self.piece, start_y, end_y))
-        network.send_data({
+        self.network.send_data({
             "type": "hard_drop", "x": self.piece.x, "shape": self.piece.shape,
             "start_y": start_y, "end_y": end_y
         })
@@ -455,9 +456,17 @@ class TetrisGame:
             self.clearing_lines = lines
             self.clear_timer = self.clear_duration
             if len(lines) >= 2:
-                network.send_data({"type": "garbage", "amount": len(lines) - 1})
+                self.network.send_data({"type": "garbage", "amount": len(lines) - 1})
 
     def update(self, dt):
+        # 0.
+        if self.multiplayer and self.network.opponent_disconnected:
+            # Можно вывести уведомление "Оппонент ливнул"
+            self.game_running = False
+            self.exit_reason = "menu"
+            pygame.display.quit()
+            return
+
         # 1. Шторка
         if self.curtain_closing:
             target = 0
@@ -501,26 +510,26 @@ class TetrisGame:
             self.piece = self.get_next_piece_from_queue()
             if not valid_move(self.piece, self.grid):
                 self.game_over = True
-                network.send_data({"type": "game_over"})
+                self.network.send_data({"type": "game_over"})
 
     def process_network(self, dt):
         self.network_timer += dt
-        if network.incoming_garbage > 0:
-            self.add_garbage(network.incoming_garbage)
-            network.incoming_garbage = 0
+        if self.network.incoming_garbage > 0:
+            self.add_garbage(self.network.incoming_garbage)
+            self.network.incoming_garbage = 0
 
         if not self.game_over and self.network_timer >= 0.05:
-            network.send_data({
+            self.network.send_data({
                 "type": "state", "grid": self.grid, "score": self.score,
                 "piece": {"shape": self.piece.shape, "x": self.piece.x, "y": self.piece.y}
             })
             self.network_timer = 0
 
-        while network.opponent_effects_but_in_network:
-            data = network.opponent_effects_but_in_network.pop(0)
+        while self.network.opponent_effects_but_in_network:
+            data = self.network.opponent_effects_but_in_network.pop(0)
             self.opponent_effects.append(create_opponent_effect(data))
 
-        if network.opponent_lost:
+        if self.network.opponent_lost:
             self.game_over, self.winner = True, "me"
 
     def finalize_line_clear(self):
@@ -563,9 +572,9 @@ class TetrisGame:
 
         # 2. Отрисовка поля оппонента (если мультиплеер)
         if self.multiplayer:
-            if network.opponent_grid:
-                draw_opponent_grid(self.screen, network.opponent_grid, 0)
-                draw_opponent_piece(self.screen, network.opponent_piece, 0)
+            if self.network.opponent_grid:
+                draw_opponent_grid(self.screen, self.network.opponent_grid, 0)
+                draw_opponent_piece(self.screen, self.network.opponent_piece, 0)
             draw_grid(self.screen, offset_x=0)  # Сетка оппонента
 
         # 3. Твое поле: ПОРЯДОК ВАЖЕН
@@ -642,7 +651,7 @@ class TetrisGame:
         self.screen.blit(p1, (self.width // 2 - p1.get_width() // 2, self.height // 2 - 30))
 
         if self.multiplayer:
-            p2 = self.font.render(f"{self.opponent_name}: {network.opponent_score}", True, (255, 255, 255))
+            p2 = self.font.render(f"{self.opponent_name}: {self.network.opponent_score}", True, (255, 255, 255))
             self.screen.blit(p2, (self.width // 2 - p2.get_width() // 2, self.height // 2))
 
         # Статистика и кнопки (используем self.images)
@@ -655,7 +664,7 @@ class TetrisGame:
         else:
             self.draw_menu_item("       Waiting for opponent...", "warn", y_off + 30, (255, 200, 100))
 
-        if network.rematch_ready:
+        if self.network.rematch_ready:
             self.draw_menu_item("       Opponent ready!", "approve", y_off + 60, (100, 255, 100))
 
     def draw_menu_item(self, text, icon_key, y, color=(200, 200, 200)):
@@ -692,7 +701,7 @@ class TetrisGame:
             res = self.update(dt)
             if res: return res
 
-            if self.my_ready and network.rematch_ready and not self.rematch_triggered:
+            if self.my_ready and self.network.rematch_ready and not self.rematch_triggered:
                 self.rematch_triggered = True
                 self.curtain_closing = True
 

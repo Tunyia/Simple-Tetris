@@ -3,171 +3,116 @@ import threading
 import json
 import time
 
-server_socket = None
-client_socket = None
-conn = None
-role = None  # "host" или "client"
 
-running = False
+class NetworkManager:
+    def __init__(self):
+        self.conn = None
+        self.server_socket = None
+        self.role = None
+        self.running = False
 
-# данные от оппонента
-opponent_grid = None
-incoming_garbage = 0
-opponent_piece = None
-opponent_effects_but_in_network = []
-opponent_lost = False
-rematch_ready = False
-opponent_score = 0
+        # Состояние оппонента
+        self.opponent_grid = None
+        self.opponent_piece = None
+        self.opponent_score = 0
+        self.opponent_lost = False
+        self.opponent_disconnected = False  # НОВЫЙ ФЛАГ
+        self.incoming_garbage = 0
+        self.opponent_effects = []
+        self.rematch_ready = False
 
-# SERVER
-def start_server(on_connected, on_status, on_port):
-    global role
-    role = "host"
-    print("HOST")
-    def run():
-        global server_socket, conn, running
-        try:
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    def start_server(self, on_connected, on_status, on_port):
+        self.role = "host"
+
+        def run():
             try:
-                server_socket.bind(("0.0.0.0", 12345))
+                self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.server_socket.bind(("0.0.0.0", 12345))  # Или 0 для авто-порта
+                self.server_socket.listen(1)
+                on_port(self.server_socket.getsockname()[1])
+
+                self.conn, _ = self.server_socket.accept()
+                self.running = True
+                self.start_receive_thread()
+                on_connected()
+            except Exception as e:
+                on_status(f"Error: {e}")
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def start_client(self, ip, port, on_success, on_fail):
+        self.role = "client"
+
+        def run():
+            try:
+                self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.conn.settimeout(5)
+                self.conn.connect((ip, port))
+                self.running = True
+                self.start_receive_thread()
+                on_success()
+            except Exception as e:
+                print(e)
+                on_fail()
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def send_data(self, data):
+        if self.conn and self.running:
+            try:
+                message = json.dumps(data).encode() + b"\n"
+                self.conn.sendall(message)
             except:
-                server_socket.bind(("0.0.0.0", 0))
-            server_socket.listen(1)
-            port = server_socket.getsockname()[1]
-            on_port(port)  #сообщаем UI
+                self.running = False
 
-            conn, _ = server_socket.accept()
-            running = True
+    def start_receive_thread(self):
+        threading.Thread(target=self.receive_loop, daemon=True).start()
 
-            start_receive_thread()
+    def receive_loop(self):
+        buffer = ""
+        while self.running:
+            try:
+                data = self.conn.recv(4096).decode()
+                if not data: break
 
-            on_connected()
-        except:
-            on_status("Server stopped")
-    threading.Thread(target=run, daemon=True).start()
+                buffer += data
+                while "\n" in buffer:
+                    msg, buffer = buffer.split("\n", 1)
+                    packet = json.loads(msg)
+                    self.parse_packet(packet)
+            except:
+                break
+        self.stop()
 
-# CLIENT
-def start_client(ip, port, on_success, on_fail):
-    global role
-    role = "client"
-    print("CLIENT")
-    def run():
-        global client_socket, conn, running
-        try:
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.settimeout(3)
-            client_socket.connect((ip, port))
+    def parse_packet(self, packet):
+        p_type = packet.get("type")
+        if p_type == "state":
+            self.opponent_grid = packet.get("grid")
+            self.opponent_piece = packet.get("piece")
+            self.opponent_score = packet.get("score", 0)
+        elif p_type == "garbage":
+            self.incoming_garbage += packet.get("amount", 0)
+        elif p_type == "hard_drop":
+            self.opponent_effects.append(packet)
+        elif p_type == "game_over":
+            self.opponent_lost = True
+        elif p_type == "disconnect":
+            self.opponent_disconnected = True
+            self.running = False
+        elif p_type == "rematch":
+            self.rematch_ready = packet.get("ready", False)
 
-            conn = client_socket
-            running = True
-
-            start_receive_thread()
-
-            on_success()
-        except:
-            on_fail()
-    threading.Thread(target=run, daemon=True).start()
-
-# SEND
-def send_data(data):
-    global conn
-    if not conn:
-        return  # не отправляем если нет соединения
-    try:
-        message = json.dumps(data).encode()
-        conn.sendall(message + b"\n")
-    except:
-        pass
-
-# RECEIVE
-def start_receive_thread():
-    threading.Thread(target=receive_loop, daemon=True).start()
-
-log_timer = 0
-def receive_loop():
-    global opponent_grid, incoming_garbage, running, opponent_piece, opponent_effects_but_in_network, \
-    opponent_lost, rematch_ready, log_timer
-    print(f"{time.strftime("%H:%M:%S", time.localtime())} receive_loop: start!")
-
-    buffer = ""
-    while running:
-        try:
-            log_timer += 1
-            if log_timer > 10:
-                print(f"{time.strftime("%H:%M:%S", time.localtime())} receive_loop: working")
-                log_timer = 0
-
-            data = conn.recv(4096).decode()
-
-            buffer += data
-            while "\n" in buffer:
-                msg, buffer = buffer.split("\n", 1)
-                packet = json.loads(msg)
-
-                if packet["type"] == "grid":
-                    opponent_grid = packet["grid"]
-                    #print("GRID RECEIVED", len(opponent_grid))
-
-                elif packet["type"] == "state":
-                    opponent_grid = packet["grid"]
-                    opponent_piece = packet["piece"]
-                    opponent_score = packet.get("score", 0)
-
-                elif packet["type"] == "garbage":
-                    incoming_garbage += packet["amount"]
-
-                elif packet["type"] == "message":
-                    print("Received message:", packet["message"])
-
-                elif packet["type"] == "hard_drop":
-                    opponent_effects_but_in_network.append(packet)
-
-                elif packet["type"] == "game_over":
-                    opponent_lost = True
-
-                elif packet["type"] == "rematch":
-                    rematch_ready = packet.get("ready", False)
-
-                elif packet["type"] == "disconnect":
-                    print("Opponent disconnected")
-                    running = False
-        except Exception as e:
-            print(f"receive_loop error: {e}")
-
-# STOP
-def stop():
-    global running, server_socket, client_socket, conn
-    global opponent_grid, incoming_garbage, opponent_piece, opponent_effects_but_in_network
-    global rematch_ready
-
-    running = False
-
-    try:
-        if conn:
-            conn.close()
-    except:
-        pass
-
-    try:
-        if server_socket:
-            server_socket.close()
-    except:
-        pass
-
-    try:
-        if client_socket:
-            client_socket.close()
-    except:
-        pass
-
-    # СБРОС СОСТОЯНИЯ
-    conn = None
-    server_socket = None
-    client_socket = None
-
-    opponent_grid = None
-    incoming_garbage = 0
-    opponent_piece = None
-    opponent_effects_but_in_network = []
-    rematch_ready = False
+    def stop(self):
+        self.running = False
+        if self.conn:
+            try:
+                self.conn.close()
+            except:
+                pass
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+            except:
+                pass
+        self.conn = None

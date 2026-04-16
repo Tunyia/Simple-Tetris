@@ -1,27 +1,44 @@
 import pygame
+import sys
 from menu import choose_mode
 from tetris import TetrisGame
 
-while True:
+def main():
+    # Инициализируем один раз при старте программы
     pygame.init()
-    # Открываем меню
-    mode_data = choose_mode()
 
-    # 1. Если нажали "Cancel" или закрыли крестиком
-    if not mode_data or mode_data["mode"] is None:
-        break
-
-    current_mode = mode_data["mode"]
-    is_multi = (current_mode != "single")
-
-    # 2. Игровой цикл (обработка реваншей)
     while True:
-        game = TetrisGame(multiplayer=is_multi)
-        result = game.run()
+        # 1. Открываем меню. Оно заблокирует выполнение, пока не выберем режим.
+        mode_data = choose_mode()
 
-        if result == "rematch":
-            pygame.display.quit()
-            continue # внутренний цикл сработает снова, создав новый объект TetrisGame
-        else:
-            break # менюшка
-pygame.quit()
+        # Если закрыли крестиком
+        if not mode_data or mode_data.get("mode") is None:
+            break
+
+        current_mode = mode_data["mode"]
+        is_multi = (current_mode != "single")
+        network = mode_data.get("network")
+
+        # 2. Игровой цикл (обработка реваншей)
+        while True:
+            # Создаем игру
+            game = TetrisGame(multiplayer=is_multi, network_manager=network)
+            result = game.run()
+
+            if result == "rematch":
+                # Для реванша просто создаем новый объект TetrisGame на следующем круге
+                # Окно НЕ закрываем (display.quit не нужен, если экран тот же)
+                continue
+            else:
+                # Если выходим в меню:
+                if network:
+                    network.stop()
+                # Полностью гасим видео-систему перед возвратом в Tkinter
+                pygame.display.quit()
+                break
+
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
