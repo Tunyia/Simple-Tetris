@@ -42,23 +42,27 @@ def choose_mode():
 
     def process_ui_queue():
         nonlocal after_id
+
+        if not menu_running:
+            return
+
         while not ui_queue.empty():
-            func = ui_queue.get()
             try:
-                func()  # Пытаемся выполнить обновление UI
-            except tk.TclError:
-                pass  # Если виджет уже удален, просто игнорируем ошибку
+                func = ui_queue.get_nowait()
+                func()
+            except:
+                pass
 
         if menu_running:
             after_id = root.after(50, process_ui_queue)
-
     process_ui_queue()
 
     # БЕЗОПАСНЫЙ ВЫХОД!! очень важная шняга
     def safe_exit(mode=None, ip="", port=12345):  # Добавим порт в аргументы
         nonlocal menu_running, after_id
-        menu_running = False
+        global server_conn, server_connected
 
+        menu_running = False
         result["mode"] = mode
         result["ip"] = ip
         result["port"] = port
@@ -69,8 +73,15 @@ def choose_mode():
             except:
                 pass
 
+        if server_conn:
+            try:
+                server_conn.close()
+            except:
+                pass
+            server_conn = None
+            server_connected = False
+
         root.quit()
-        root.destroy()
 
     # Перехватываем нажатие на крестик окна
     root.protocol("WM_DELETE_WINDOW", lambda: safe_exit(None))
@@ -357,6 +368,12 @@ def choose_mode():
             pass
     elif result["ip"]:
         final_ip = result["ip"]
+
+    try:
+        root.destroy()
+    except Exception as e:
+        print(e)
+        pass
 
     # Возвращаем данные. Теперь main.py получит всё, что нужно.
     return {
