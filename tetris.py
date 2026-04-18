@@ -445,8 +445,11 @@ class TetrisGame:
 
         self.hard_drop_effects.append(HardDropEffect(self.piece, start_y, end_y))
         self.network.send_data({
-            "type": "hard_drop", "x": self.piece.x, "shape": self.piece.shape,
-            "start_y": start_y, "end_y": end_y
+            "type": "hard_drop",
+            "x": self.piece.x,
+            "shape": self.piece.shape,
+            "start_y": start_y,
+            "end_y": end_y
         })
 
         self.piece.y += drop_dist
@@ -530,8 +533,8 @@ class TetrisGame:
             })
             self.network_timer = 0
 
-        while self.network.opponent_effects_but_in_network:
-            data = self.network.opponent_effects_but_in_network.pop(0)
+        while self.network.opponent_effects:
+            data = self.network.opponent_effects.pop(0)
             self.opponent_effects.append(create_opponent_effect(data))
 
         if self.network.opponent_lost:
@@ -694,6 +697,7 @@ class TetrisGame:
     def run(self):
         self.game_running = True
         start_packet_sent = False
+
         while self.game_running:
             dt = self.clock.tick(60) / 1000.0
             dt = min(dt, 0.05)
@@ -704,28 +708,23 @@ class TetrisGame:
 
             if self.game_over:
                 if self.multiplayer:
-                    # 1. Если дисконнект - уходим
                     if self.network.opponent_disconnected or not self.network.running:
                         print("[DEBUG] Connection lost during GameOver")
                         return "menu"
 
-                    # 2. Если оба готовы - шлём сигнал старта (один раз)
                     if self.i_am_ready_for_rematch and self.network.rematch_ready:
                         if not start_packet_sent:
                             print("[DEBUG] Sending start_game packet...")
                             self.network.send_data({"type": "start_game"})
                             start_packet_sent = True
 
-                    # 3. Самое главное!!! ждем подтверждения от NetworkManager
                     if self.network.game_should_start:
                         print("[DEBUG] Conditions met, restarting game!")
                         return "rematch"
                 else:
-                    # В одиночке просто ждем R
                     if self.i_am_ready_for_rematch:
                         return "rematch"
 
-            # Если зажато вниз - ускоряем
             self.fall_speed = 0.25
             keys = pygame.key.get_pressed()
             if keys[pygame.K_DOWN]:
