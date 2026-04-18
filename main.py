@@ -21,10 +21,10 @@ def main():
 
         # 2. Игровой цикл (обработка реваншей)
         while True:
-            if network and not network.running:
+            if is_multi and network and (not network.running or network.opponent_disconnected):
                 print("[SYSTEM] Connection lost. Returning to menu...")
                 pygame.display.quit()
-                break  # Выход в главное меню
+                break
 
             # Сбрасываем флаги сети перед началом новой игры (для корректного реванша)
             if network:

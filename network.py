@@ -48,13 +48,14 @@ class NetworkManager:
         def run():
             try:
                 self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.conn.settimeout(5)
+                self.conn.settimeout(10)
                 self.conn.connect((ip, port))
+                self.conn.settimeout(None)
                 self.running = True
                 self.start_receive_thread()
                 on_success()
             except Exception as e:
-                print(e)
+                print(f"[CLIENT] Connection failed: {e}")
                 on_fail()
 
         threading.Thread(target=run, daemon=True).start()
@@ -77,10 +78,9 @@ class NetworkManager:
         buffer = ""
         while self.running:
             try:
-                # Читаем данные
                 data = self.conn.recv(4096).decode()
                 if not data:
-                    print("[NETWORK] Connection closed by peer")
+                    print("[NETWORK] Peer disconnected (empty data)")
                     break
 
                 buffer += data
@@ -89,19 +89,24 @@ class NetworkManager:
                     if not msg.strip(): continue
                     packet = json.loads(msg)
                     self.parse_packet(packet)
-            except socket.timeout:
-                # !!!если данных нет 5 секунд, мы просто уходим на новый круг цикла, а не закрываем соединение.
-                continue
             except Exception as e:
                 print(f"[NETWORK] Receive error: {e}")
                 break
-        self.stop()
+
+        self.running = False
         self.opponent_disconnected = True
+        if self.conn:
+            try:
+                self.conn.close()
+            except Exception as e:
+                pass
+                print(f"disconnected: {e}")
 
     def parse_packet(self, packet):
         p_type = packet.get("type")
+        if p_type in ["rematch", "start_game", "disconnect"]:
+            print(f"[NETWORK] Received packet: {packet}")
 
-        # Логика обработки
         if p_type == "state":
             self.opponent_grid = packet.get("grid")
             self.opponent_piece = packet.get("piece")

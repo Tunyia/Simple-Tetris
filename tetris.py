@@ -699,6 +699,7 @@ class TetrisGame:
 
     def run(self):
         self.game_running = True
+        start_packet_sent = False
         while self.game_running:
             dt = self.clock.tick(60) / 1000.0
             dt = min(dt, 0.05)
@@ -709,19 +710,19 @@ class TetrisGame:
 
             if self.game_over:
                 if self.multiplayer:
-                    # 1. Если дисконнект — уходим
+                    # 1. Если дисконнект - уходим
                     if self.network.opponent_disconnected or not self.network.running:
                         print("[DEBUG] Connection lost during GameOver")
                         return "menu"
 
-                    # 2. Если оба готовы — шлём сигнал старта (один раз)
+                    # 2. Если оба готовы - шлём сигнал старта (один раз)
                     if self.i_am_ready_for_rematch and self.network.rematch_ready:
-                        if not self.start_packet_sent:
+                        if not start_packet_sent:
                             print("[DEBUG] Sending start_game packet...")
                             self.network.send_data({"type": "start_game"})
-                            self.start_packet_sent = True
+                            start_packet_sent = True
 
-                    # 3. Самое главное: ждем подтверждения от NetworkManager
+                    # 3. Самое главное!!! ждем подтверждения от NetworkManager
                     if self.network.game_should_start:
                         print("[DEBUG] Conditions met, restarting game!")
                         return "rematch"
