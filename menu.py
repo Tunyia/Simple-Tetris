@@ -359,16 +359,6 @@ def choose_mode():
     final_ip = "127.0.0.1"
     final_port = 12345
 
-    if result["ip"] and ":" in str(result["ip"]):
-        try:
-            parts = result["ip"].split(":")
-            final_ip = parts[0]
-            final_port = int(parts[1])
-        except:
-            pass
-    elif result["ip"]:
-        final_ip = result["ip"]
-
     try:
         root.destroy()
     except Exception as e:

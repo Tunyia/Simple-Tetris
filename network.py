@@ -10,13 +10,14 @@ class NetworkManager:
         self.server_socket = None
         self.role = None
         self.running = False
+        self.game_should_start = False  # Добавили инициализацию
 
         # Состояние оппонента
         self.opponent_grid = None
         self.opponent_piece = None
         self.opponent_score = 0
         self.opponent_lost = False
-        self.opponent_disconnected = False  # НОВЫЙ ФЛАГ
+        self.opponent_disconnected = False
         self.incoming_garbage = 0
         self.opponent_effects = []
         self.rematch_ready = False
@@ -59,12 +60,15 @@ class NetworkManager:
         threading.Thread(target=run, daemon=True).start()
 
     def send_data(self, data):
-        if self.conn and self.running:
-            try:
-                message = json.dumps(data).encode() + b"\n"
-                self.conn.sendall(message)
-            except:
-                self.running = False
+        if not self.conn or not self.running:
+            return
+        try:
+            message = json.dumps(data) + "\n"
+            self.conn.sendall(message.encode())
+        except (OSError, BrokenPipeError, ConnectionResetError) as e:
+            print(f"[NETWORK] Error sending data: {e}")
+            self.running = False
+            self.opponent_disconnected = True  # Этот флаг мы проверим в игре
 
     def start_receive_thread(self):
         threading.Thread(target=self.receive_loop, daemon=True).start()
@@ -73,20 +77,31 @@ class NetworkManager:
         buffer = ""
         while self.running:
             try:
+                # Читаем данные
                 data = self.conn.recv(4096).decode()
-                if not data: break
+                if not data:
+                    print("[NETWORK] Connection closed by peer")
+                    break
 
                 buffer += data
                 while "\n" in buffer:
                     msg, buffer = buffer.split("\n", 1)
+                    if not msg.strip(): continue
                     packet = json.loads(msg)
                     self.parse_packet(packet)
-            except:
+            except socket.timeout:
+                # !!!если данных нет 5 секунд, мы просто уходим на новый круг цикла, а не закрываем соединение.
+                continue
+            except Exception as e:
+                print(f"[NETWORK] Receive error: {e}")
                 break
         self.stop()
+        self.opponent_disconnected = True
 
     def parse_packet(self, packet):
         p_type = packet.get("type")
+
+        # Логика обработки
         if p_type == "state":
             self.opponent_grid = packet.get("grid")
             self.opponent_piece = packet.get("piece")
@@ -97,11 +112,24 @@ class NetworkManager:
             self.opponent_effects.append(packet)
         elif p_type == "game_over":
             self.opponent_lost = True
+        elif p_type == "rematch":
+            self.rematch_ready = packet.get("ready", False)
+        elif p_type == "start_game":
+            print("[NETWORK] Start game signal received!")
+            self.game_should_start = True  # ТЕПЕРЬ ФЛАГ ПОДНИМАЕТСЯ
         elif p_type == "disconnect":
             self.opponent_disconnected = True
             self.running = False
-        elif p_type == "rematch":
-            self.rematch_ready = packet.get("ready", False)
+
+    def reset_for_rematch(self):
+        self.opponent_grid = None
+        self.opponent_piece = None
+        self.opponent_lost = False
+        self.opponent_disconnected = False
+        self.incoming_garbage = 0
+        self.opponent_effects = []
+        self.rematch_ready = False
+        self.game_should_start = False  # Сбрасываем для следующего раза
 
     def stop(self):
         self.running = False

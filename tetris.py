@@ -333,6 +333,10 @@ class TetrisGame:
         self.network_timer = 0
         self.reset_network_state()
 
+        self.i_am_ready_for_rematch = False
+        self.network.game_should_start = False
+        self.start_packet_sent = False
+
         # Шторка
         self.easing = 15
         self.curtain_y = 0
@@ -419,11 +423,12 @@ class TetrisGame:
             pygame.display.quit() # Закрываем именно видео-подсистему (окно исчезнет)
             self.game_running = False # Выходим из цикла run()
         if key == pygame.K_r:
+            self.i_am_ready_for_rematch = not self.i_am_ready_for_rematch
             if self.multiplayer:
-                self.my_ready = not self.my_ready
-                self.network.send_data({"type": "rematch", "ready": self.my_ready})
-            else:
-                self.curtain_closing = True
+                self.network.send_data({
+                    "type": "rematch",
+                    "ready": self.i_am_ready_for_rematch
+                })
 
     def hold_logic(self):
         if self.held_piece is None:
@@ -655,17 +660,36 @@ class TetrisGame:
             self.screen.blit(p2, (self.width // 2 - p2.get_width() // 2, self.height // 2))
 
         # Статистика и кнопки (используем self.images)
-        y_off = self.height // 2 + 50
-        self.draw_menu_item("       Press ENTER to menu", "back", y_off)
+            # Кнопки меню
+            y_off = self.height // 2 + 50
+            self.draw_menu_item("       Press ENTER to menu", "back", y_off)
 
-        rematch_txt = "       Press R for rematch" if self.multiplayer else "       Press R for restart"
-        if not self.my_ready:
-            self.draw_menu_item(rematch_txt, "reload", y_off + 30)
-        else:
-            self.draw_menu_item("       Waiting for opponent...", "warn", y_off + 30, (255, 200, 100))
+            # ЛОГИКА РЕВАНША / РЕСТАРТА
+            if not self.multiplayer:
+                # Одиночная игра
+                self.draw_menu_item("       Press R for restart", "reload", y_off + 40)
+            else:
+                # Мультиплеер: проверяем состояния готовности
+                opp_ready = self.network.rematch_ready
+                me_ready = self.i_am_ready_for_rematch
 
-        if self.network.rematch_ready:
-            self.draw_menu_item("       Opponent ready!", "approve", y_off + 60, (100, 255, 100))
+                if me_ready and opp_ready:
+                    # Если оба готовы, отрисовка может не успеть сработать до возврата,
+                    # но на всякий случай оставим индикатор
+                    self.draw_menu_item("       Starting...", "approve", y_off + 40, (100, 255, 100))
+
+                elif me_ready and not opp_ready:
+                    # Я нажал, жду его
+                    self.draw_menu_item("       Waiting for opponent...", "warn", y_off + 40, (255, 200, 100))
+
+                elif not me_ready and opp_ready:
+                    # Он нажал, я еще нет
+                    self.draw_menu_item("       Opponent ready!", "approve", y_off + 40, (100, 255, 100))
+                    self.draw_menu_item("       Press R for rematch", "reload", y_off + 70)
+
+                else:
+                    # Никто не нажал
+                    self.draw_menu_item("       Press R for rematch", "reload", y_off + 40)
 
     def draw_menu_item(self, text, icon_key, y, color=(200, 200, 200)):
         surf = self.font.render(text, True, color)
@@ -681,8 +705,30 @@ class TetrisGame:
 
             self.handle_events()
 
-            if not self.game_running:
-                break
+            if not self.game_running: break
+
+            if self.game_over:
+                if self.multiplayer:
+                    # 1. Если дисконнект — уходим
+                    if self.network.opponent_disconnected or not self.network.running:
+                        print("[DEBUG] Connection lost during GameOver")
+                        return "menu"
+
+                    # 2. Если оба готовы — шлём сигнал старта (один раз)
+                    if self.i_am_ready_for_rematch and self.network.rematch_ready:
+                        if not self.start_packet_sent:
+                            print("[DEBUG] Sending start_game packet...")
+                            self.network.send_data({"type": "start_game"})
+                            self.start_packet_sent = True
+
+                    # 3. Самое главное: ждем подтверждения от NetworkManager
+                    if self.network.game_should_start:
+                        print("[DEBUG] Conditions met, restarting game!")
+                        return "rematch"
+                else:
+                    # В одиночке просто ждем R
+                    if self.i_am_ready_for_rematch:
+                        return "rematch"
 
             # Если зажато вниз - ускоряем
             self.fall_speed = 0.25

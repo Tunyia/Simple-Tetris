@@ -21,6 +21,15 @@ def main():
 
         # 2. Игровой цикл (обработка реваншей)
         while True:
+            if network and not network.running:
+                print("[SYSTEM] Connection lost. Returning to menu...")
+                pygame.display.quit()
+                break  # Выход в главное меню
+
+            # Сбрасываем флаги сети перед началом новой игры (для корректного реванша)
+            if network:
+                network.reset_for_rematch()
+
             # Создаем игру
             game = TetrisGame(multiplayer=is_multi, network_manager=network)
             result = game.run()
