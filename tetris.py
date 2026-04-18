@@ -659,37 +659,31 @@ class TetrisGame:
             p2 = self.font.render(f"{self.opponent_name}: {self.network.opponent_score}", True, (255, 255, 255))
             self.screen.blit(p2, (self.width // 2 - p2.get_width() // 2, self.height // 2))
 
-        # Статистика и кнопки (используем self.images)
-            # Кнопки меню
-            y_off = self.height // 2 + 50
-            self.draw_menu_item("       Press ENTER to menu", "back", y_off)
+            # Кнопки меню (теперь вызываются вне зависимости от режима игры)
+        y_off = self.height // 2 + 50
+        self.draw_menu_item("       Press ENTER to menu", "back", y_off)
 
-            # ЛОГИКА РЕВАНША / РЕСТАРТА
-            if not self.multiplayer:
-                # Одиночная игра
-                self.draw_menu_item("       Press R for restart", "reload", y_off + 40)
+        # ЛОГИКА РЕВАНША / РЕСТАРТА
+        if not self.multiplayer:
+            # Одиночная игра
+            self.draw_menu_item("       Press R for restart", "reload", y_off + 40)
+        else:
+            # Мультиплеер: проверяем состояния готовности
+            opp_ready = self.network.rematch_ready
+            me_ready = self.i_am_ready_for_rematch
+
+            if me_ready and opp_ready:
+                self.draw_menu_item("       Starting...", "approve", y_off + 40, (100, 255, 100))
+
+            elif me_ready and not opp_ready:
+                self.draw_menu_item("       Waiting for opponent...", "warn", y_off + 40, (255, 200, 100))
+
+            elif not me_ready and opp_ready:
+                self.draw_menu_item("       Opponent ready!", "approve", y_off + 40, (100, 255, 100))
+                self.draw_menu_item("       Press R for rematch", "reload", y_off + 70)
+
             else:
-                # Мультиплеер: проверяем состояния готовности
-                opp_ready = self.network.rematch_ready
-                me_ready = self.i_am_ready_for_rematch
-
-                if me_ready and opp_ready:
-                    # Если оба готовы, отрисовка может не успеть сработать до возврата,
-                    # но на всякий случай оставим индикатор
-                    self.draw_menu_item("       Starting...", "approve", y_off + 40, (100, 255, 100))
-
-                elif me_ready and not opp_ready:
-                    # Я нажал, жду его
-                    self.draw_menu_item("       Waiting for opponent...", "warn", y_off + 40, (255, 200, 100))
-
-                elif not me_ready and opp_ready:
-                    # Он нажал, я еще нет
-                    self.draw_menu_item("       Opponent ready!", "approve", y_off + 40, (100, 255, 100))
-                    self.draw_menu_item("       Press R for rematch", "reload", y_off + 70)
-
-                else:
-                    # Никто не нажал
-                    self.draw_menu_item("       Press R for rematch", "reload", y_off + 40)
+                self.draw_menu_item("       Press R for rematch", "reload", y_off + 40)
 
     def draw_menu_item(self, text, icon_key, y, color=(200, 200, 200)):
         surf = self.font.render(text, True, color)
