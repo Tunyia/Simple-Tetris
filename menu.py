@@ -5,8 +5,35 @@ import sys
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 
 from network import NetworkManager
+
+_SETTINGS_PATH = Path(__file__).resolve().parent / "player_settings.json"
+
+
+def load_saved_nickname():
+    try:
+        if _SETTINGS_PATH.is_file():
+            data = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                n = str(data.get("nickname", "")).strip()
+                if n:
+                    return n[:32]
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return "Player"
+
+
+def save_nickname(nickname):
+    try:
+        nick = (nickname or "").strip() or "Player"
+        _SETTINGS_PATH.write_text(
+            json.dumps({"nickname": nick[:32]}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 server_conn = None
 server_connected = False
@@ -40,16 +67,16 @@ def choose_mode():
         "mode": None,
         "ip": "127.0.0.1",
         "port": 12345,
+        "nickname": "Player",
     }
 
     waiting_label = None
-    cancel_btn = None
-    copy_btn = None
+    waiting_host_row = None
 
     root = tk.Tk()
     root.title("Tetris Menu")
-    root.minsize(500, 360)
-    root.geometry("500x360")
+    root.minsize(500, 400)
+    root.geometry("500x400")
     root.resizable(False, False)
     root.configure(bg="#0f0f0f")
 
@@ -127,16 +154,13 @@ def choose_mode():
         join_btn_right.config(state="normal")
 
     def clear_waiting():
-        nonlocal waiting_label, cancel_btn, copy_btn
+        nonlocal waiting_label, waiting_host_row
         if waiting_label:
             waiting_label.destroy()
             waiting_label = None
-        if cancel_btn:
-            cancel_btn.destroy()
-            cancel_btn = None
-        if copy_btn:
-            copy_btn.destroy()
-            copy_btn = None
+        if waiting_host_row:
+            waiting_host_row.destroy()
+            waiting_host_row = None
 
     def show_waiting(text):
         nonlocal waiting_label
@@ -148,41 +172,38 @@ def choose_mode():
             )
             waiting_label.pack(pady=0)
 
-    def show_cancel():
-        nonlocal cancel_btn
-        if not cancel_btn:
-            cancel_btn = tk.Button(
-                left_frame,
-                text="Cancel",
-                command=cancel_action,
-                font=("Arial", 12),
-                bg="#444444",
-                fg="white",
-                width=12,
-                bd=3,
-            )
-            cancel_btn.pack(pady=5)
-
     def copy_ip(ip):
         root.clipboard_clear()
         root.clipboard_append(ip)
         root.update_idletasks()
         show_waiting(f"IP: {ip}\nCopied!")
 
-    def show_copy(ip):
-        nonlocal copy_btn
-        if not copy_btn:
-            copy_btn = tk.Button(
-                left_frame,
-                text="Copy IP",
-                command=lambda: copy_ip(ip),
-                font=("Arial", 12),
-                bg="#444444",
-                fg="white",
-                width=12,
-                bd=3,
-            )
-            copy_btn.pack(pady=5)
+    def show_host_buttons(ip_port):
+        nonlocal waiting_host_row
+        if waiting_host_row:
+            waiting_host_row.destroy()
+        waiting_host_row = tk.Frame(left_frame, bg="#1a1a1a")
+        waiting_host_row.pack(fill="x", pady=5)
+        tk.Button(
+            waiting_host_row,
+            text="Copy IP",
+            command=lambda p=ip_port: copy_ip(p),
+            font=("Arial", 12),
+            bg="#444444",
+            fg="white",
+            bd=3,
+            height=1,
+        ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
+        tk.Button(
+            waiting_host_row,
+            text="Cancel",
+            command=cancel_action,
+            font=("Arial", 12),
+            bg="#444444",
+            fg="white",
+            bd=3,
+            height=1,
+        ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 0))
 
     def set_single():
         safe_exit("single")
@@ -194,8 +215,7 @@ def choose_mode():
         def on_port(port):
             if menu_running:
                 ui_queue.put(lambda: show_waiting(f"IP: {ip}:{port}\nWaiting for player..."))
-                ui_queue.put(lambda: show_copy(f"{ip}:{port}"))
-                ui_queue.put(show_cancel)
+                ui_queue.put(lambda: show_host_buttons(f"{ip}:{port}"))
 
         def on_connected():
             if menu_running:
@@ -321,12 +341,34 @@ def choose_mode():
     main_frame = tk.Frame(root, bg="#0f0f0f")
     main_frame.pack(fill="both", expand=True)
 
-    left_frame = tk.Frame(main_frame, bg="#1a1a1a", width=220, height=340)
-    left_frame.pack(side="left", fill="y", padx=(8, 4), pady=8)
+    nick_bar = tk.Frame(main_frame, bg="#0f0f0f")
+    nick_bar.pack(fill="x", padx=12, pady=(10, 6))
+    tk.Label(nick_bar, text="Nickname", bg="#0f0f0f", fg="#cccccc", font=("Arial", 10)).pack(
+        side=tk.LEFT, padx=(0, 8)
+    )
+    nickname_entry = tk.Entry(nick_bar, font=("Arial", 12), justify="center")
+    nickname_entry.pack(side=tk.LEFT, fill="x", expand=True)
+    nickname_entry.insert(0, load_saved_nickname())
+
+    content = tk.Frame(main_frame, bg="#0f0f0f")
+    content.pack(fill="both", expand=True)
+
+    left_wrap = tk.Frame(content, bg="#0f0f0f")
+    left_wrap.pack(side="left", fill="y", padx=(8, 4), pady=(0, 8))
+    tk.Label(left_wrap, text="LOCAL", font=("Arial", 16, "bold"), bg="#0f0f0f", fg="white").pack(
+        anchor="w", pady=(0, 4)
+    )
+    left_frame = tk.Frame(left_wrap, bg="#1a1a1a", width=220, height=330)
+    left_frame.pack()
     left_frame.pack_propagate(False)
 
-    right_frame = tk.Frame(main_frame, bg="#1a1a1a", width=260, height=340)
-    right_frame.pack(side="right", fill="y", padx=(4, 8), pady=8)
+    right_wrap = tk.Frame(content, bg="#0f0f0f")
+    right_wrap.pack(side="right", fill="y", padx=(4, 8), pady=(0, 8))
+    tk.Label(right_wrap, text="ONLINE", font=("Arial", 16, "bold"), bg="#0f0f0f", fg="white").pack(
+        anchor="w", pady=(0, 4)
+    )
+    right_frame = tk.Frame(right_wrap, bg="#1a1a1a", width=260, height=330)
+    right_frame.pack()
     right_frame.pack_propagate(False)
 
     root.update_idletasks()
@@ -350,7 +392,7 @@ def choose_mode():
     }
 
     single_btn = tk.Button(left_frame, text="Single Player", command=set_single, **BTN)
-    single_btn.pack(pady=(15, 5))
+    single_btn.pack(pady=(12, 5))
 
     host_btn = tk.Button(left_frame, text="Host Game", command=set_host, **BTN)
     host_btn.pack(pady=5)
@@ -368,13 +410,6 @@ def choose_mode():
 
     join_btn_left = tk.Button(left_frame, text="Join Game", command=set_join, **BTN)
     join_btn_left.pack(pady=5)
-
-    tk.Label(right_frame, text="ONLINE", font=("Arial", 16, "bold"), bg="#1a1a1a", fg="white").pack(pady=0)
-    tk.Label(right_frame, text="Nickname", bg="#1a1a1a", fg="#cccccc").pack()
-
-    nickname_entry = tk.Entry(right_frame, font=("Arial", 12), justify="center")
-    nickname_entry.insert(0, "Player")
-    nickname_entry.pack(pady=(0, 0), ipadx=5, ipady=0)
 
     server_status = tk.Label(
         right_frame,
@@ -397,9 +432,7 @@ def choose_mode():
     def create_game():
         if not server_connected or not server_conn:
             return
-        name = nickname_entry.get().strip()
-        if not name:
-            return
+        name = (nickname_entry.get().strip() or "Player")[:32]
         try:
             server_conn.sendall(
                 json.dumps({"type": "create_game", "name": name}).encode("utf-8") + b"\n"
@@ -458,14 +491,23 @@ def choose_mode():
 
     root.mainloop()
 
+    nickname_out = result.get("nickname", "Player")
+    try:
+        nickname_out = (nickname_entry.get().strip() or "Player")[:32]
+    except tk.TclError:
+        pass
+
     try:
         root.destroy()
     except tk.TclError:
         pass
+
+    save_nickname(nickname_out)
 
     return {
         "mode": result["mode"],
         "ip": result["ip"],
         "port": result.get("port", 12345),
         "network": net_manager,
+        "nickname": nickname_out,
     }

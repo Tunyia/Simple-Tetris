@@ -7,3 +7,5 @@ build/
 setevoi_code.py
 tetris.spec
 main.spec
+cursor_python.md
+player_settings.json

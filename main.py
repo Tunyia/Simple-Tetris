@@ -32,7 +32,11 @@ def main():
                 if network:
                     network.reset_for_rematch()
 
-                game = TetrisGame(multiplayer=is_multi, network_manager=network)
+                game = TetrisGame(
+                    multiplayer=is_multi,
+                    network_manager=network,
+                    player_name=mode_data.get("nickname") or "Player",
+                )
                 result = game.run()
 
                 if result == "rematch":

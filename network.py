@@ -32,6 +32,7 @@ class NetworkManager:
         self.opponent_effects: List[Dict[str, Any]] = []
         self.rematch_ready = False
         self.game_should_start = False
+        self.peer_display_name: Optional[str] = None
 
     def _drain_incoming(self) -> None:
         while True:
@@ -110,6 +111,7 @@ class NetworkManager:
         def run() -> None:
             try:
                 self._stop_event.clear()
+                self.peer_display_name = None
                 self._drain_incoming()
                 with self._lock:
                     self._close_listen_socket()
@@ -159,6 +161,7 @@ class NetworkManager:
         def run() -> None:
             try:
                 self._stop_event.clear()
+                self.peer_display_name = None
                 self._drain_incoming()
                 with self._lock:
                     self._close_conn()
@@ -181,18 +184,20 @@ class NetworkManager:
 
         threading.Thread(target=run, name="net-client", daemon=True).start()
 
-    def send_data(self, data: Dict[str, Any]) -> None:
+    def send_data(self, data: Dict[str, Any]) -> bool:
         line = json.dumps(data) + "\n"
         payload = line.encode("utf-8")
         with self._lock:
             if self._stop_event.is_set() or not self.conn or not self.running:
-                return
+                return False
             try:
                 self.conn.sendall(payload)
+                return True
             except (OSError, BrokenPipeError, ConnectionResetError) as e:
                 print(f"[NETWORK] send error: {e}")
                 self.running = False
                 self.opponent_disconnected = True
+                return False
 
     def poll(self) -> None:
         """Apply all packets received since last poll (call from the game / UI thread)."""
@@ -209,12 +214,18 @@ class NetworkManager:
         if p_type == "__connection_lost__":
             self.opponent_disconnected = True
             self.running = False
+            self.peer_display_name = None
             return
 
         if p_type in ("rematch", "start_game", "disconnect"):
             print(f"[NETWORK] packet: {packet}")
 
         if p_type == "state":
+            raw = packet.get("name")
+            if isinstance(raw, str):
+                name = raw.strip()
+                if name:
+                    self.peer_display_name = name[:32]
             self.opponent_grid = packet.get("grid")
             self.opponent_piece = packet.get("piece")
             self.opponent_score = int(packet.get("score", 0))
@@ -231,6 +242,12 @@ class NetworkManager:
         elif p_type == "disconnect":
             self.opponent_disconnected = True
             self.running = False
+        elif p_type == "player_name":
+            raw = packet.get("name")
+            if isinstance(raw, str):
+                name = raw.strip()
+                if name:
+                    self.peer_display_name = name[:32]
 
     def reset_for_rematch(self) -> None:
         self._drain_incoming()
@@ -249,4 +266,5 @@ class NetworkManager:
             self.running = False
             self._close_listen_socket()
             self._close_conn()
+        self.peer_display_name = None
         self._drain_incoming()

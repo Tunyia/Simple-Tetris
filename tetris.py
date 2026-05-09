@@ -270,13 +270,17 @@ class HardDropEffect:
 
 # ОСНОВНОЙ КЛАСС ИГРЫ
 class TetrisGame:
-    def __init__(self, multiplayer=False, network_manager=None):
+    def __init__(self, multiplayer=False, network_manager=None, player_name="Player"):
         # Настройки экрана и ресурсов
         self.game_running = False
         self.multiplayer = multiplayer
         self.network = network_manager
-        self.my_name = "Player"
+        raw_name = (player_name or "").strip() or "Player"
+        self.my_name = raw_name[:32]
         self.opponent_name = "Opponent"
+        if self.network and self.network.peer_display_name:
+            self.opponent_name = self.network.peer_display_name
+        self._sent_display_name = False
 
         self.base_width = 300
         self.height = 600
@@ -525,6 +529,13 @@ class TetrisGame:
 
         self.network.poll()
 
+        if self.network.peer_display_name:
+            self.opponent_name = self.network.peer_display_name
+
+        if not self._sent_display_name:
+            if self.network.send_data({"type": "player_name", "name": self.my_name}):
+                self._sent_display_name = True
+
         self.network_timer += dt
         if self.network.incoming_garbage > 0:
             self.add_garbage(self.network.incoming_garbage)
@@ -532,8 +543,11 @@ class TetrisGame:
 
         if not self.game_over and self.network_timer >= 0.05:
             self.network.send_data({
-                "type": "state", "grid": self.grid, "score": self.score,
-                "piece": {"shape": self.piece.shape, "x": self.piece.x, "y": self.piece.y}
+                "type": "state",
+                "grid": self.grid,
+                "score": self.score,
+                "piece": {"shape": self.piece.shape, "x": self.piece.x, "y": self.piece.y},
+                "name": self.my_name,
             })
             self.network_timer = 0
 
