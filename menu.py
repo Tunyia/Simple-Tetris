@@ -8,6 +8,7 @@ import tkinter as tk
 from pathlib import Path
 
 from network import NetworkManager
+from server_relay import ServerRelayNetwork
 
 _SETTINGS_PATH = Path(__file__).resolve().parent / "player_settings.json"
 
@@ -73,6 +74,9 @@ def choose_mode(initial_window_pos=None):
     waiting_label = None
     waiting_host_row = None
     last_focused_game_id = None
+    online_wait_frame = None
+    online_waiting_host = False
+    online_waiting_join = False
 
     root = tk.Tk()
     root.title("Tetris Menu")
@@ -93,6 +97,27 @@ def choose_mode(initial_window_pos=None):
             pass
 
     net_manager = NetworkManager()
+    result["network"] = net_manager
+
+    def finish_online_relay(sock):
+        nonlocal menu_running, after_id
+        global server_conn, server_connected
+
+        relay = ServerRelayNetwork(sock)
+        relay.start_recv_thread()
+        result["mode"] = "online_relay"
+        result["network"] = relay
+        menu_running = False
+        server_connected = False
+        server_conn = None
+
+        if after_id:
+            try:
+                root.after_cancel(after_id)
+            except tk.TclError:
+                pass
+            after_id = None
+        root.quit()
 
     def process_ui_queue():
         nonlocal after_id
@@ -134,7 +159,7 @@ def choose_mode(initial_window_pos=None):
                 pass
             after_id = None
 
-        if server_conn:
+        if mode != "online_relay" and server_conn:
             try:
                 server_conn.close()
             except OSError:
@@ -144,13 +169,26 @@ def choose_mode(initial_window_pos=None):
 
         root.quit()
 
-    root.protocol("WM_DELETE_WINDOW", lambda: safe_exit(None))
+    def on_window_close():
+        nonlocal online_waiting_host
+        if online_waiting_host and server_conn and server_connected:
+            try:
+                server_conn.sendall(
+                    json.dumps({"type": "cancel_game"}).encode("utf-8") + b"\n"
+                )
+            except OSError:
+                pass
+        clear_online_lobby_wait()
+        safe_exit(None)
+
+    root.protocol("WM_DELETE_WINDOW", on_window_close)
 
     def disable_buttons():
         single_btn.config(state="disabled")
         host_btn.config(state="disabled")
         join_btn_left.config(state="disabled")
         join_btn_right.config(state="disabled")
+        create_btn.config(state="disabled")
 
     def sync_join_right_state():
         if not server_connected:
@@ -165,6 +203,10 @@ def choose_mode(initial_window_pos=None):
         single_btn.config(state="normal")
         host_btn.config(state="normal")
         join_btn_left.config(state="normal")
+        if server_connected:
+            create_btn.config(state="normal")
+        else:
+            create_btn.config(state="disabled")
         sync_join_right_state()
 
     def clear_waiting():
@@ -291,7 +333,7 @@ def choose_mode(initial_window_pos=None):
                     s.settimeout(2.0)
                     server_conn = s
                     s.connect(("127.0.0.1", 5555))
-                    s.settimeout(30.0)
+                    s.settimeout(0.5)
                     server_connected = True
                     if menu_running:
                         ui_queue.put(lambda: update_server_status(True))
@@ -338,6 +380,14 @@ def choose_mode(initial_window_pos=None):
                         server_games[:] = packet["games"]
                         if menu_running:
                             ui_queue.put(refresh_games_list)
+                    elif packet.get("type") == "match_ready":
+                        sock = conn
+                        if menu_running:
+                            ui_queue.put(lambda s=sock: finish_online_relay(s))
+            except socket.timeout:
+                continue
+            except TimeoutError:
+                continue
             except (OSError, UnicodeDecodeError):
                 break
 
@@ -453,10 +503,86 @@ def choose_mode(initial_window_pos=None):
                 json.dumps({"type": "create_game", "name": name}).encode("utf-8") + b"\n"
             )
         except OSError:
-            pass
+            return
+        show_online_wait_host()
 
     create_btn = tk.Button(right_frame, text="Create Game", command=create_game, state="disabled", **BTN)
     create_btn.pack(pady=(5, 0))
+
+    online_wait_frame = tk.Frame(right_frame, bg="#1a1a1a")
+
+    def clear_online_lobby_wait():
+        nonlocal online_waiting_host, online_waiting_join
+        online_waiting_host = False
+        online_waiting_join = False
+        for w in online_wait_frame.winfo_children():
+            w.destroy()
+        online_wait_frame.pack_forget()
+        enable_local_buttons()
+
+    def dismiss_online_wait():
+        nonlocal online_waiting_join
+        if online_waiting_host and server_conn and server_connected:
+            try:
+                server_conn.sendall(
+                    json.dumps({"type": "cancel_game"}).encode("utf-8") + b"\n"
+                )
+            except OSError:
+                pass
+        online_waiting_join = False
+        clear_online_lobby_wait()
+
+    def show_online_wait_host():
+        nonlocal online_waiting_host
+        online_waiting_host = True
+        disable_buttons()
+        for w in online_wait_frame.winfo_children():
+            w.destroy()
+        online_wait_frame.pack(fill="x", pady=(4, 0))
+        tk.Label(
+            online_wait_frame,
+            text="Waiting for opponent…",
+            bg="#1a1a1a",
+            fg="white",
+            font=("Arial", 11),
+            wraplength=240,
+            justify="center",
+        ).pack()
+        tk.Button(
+            online_wait_frame,
+            text="Cancel",
+            command=dismiss_online_wait,
+            font=("Arial", 11),
+            bg="#444444",
+            fg="white",
+            bd=2,
+        ).pack(pady=(4, 2))
+
+    def show_online_wait_join():
+        nonlocal online_waiting_join
+        online_waiting_join = True
+        disable_buttons()
+        for w in online_wait_frame.winfo_children():
+            w.destroy()
+        online_wait_frame.pack(fill="x", pady=(4, 0))
+        tk.Label(
+            online_wait_frame,
+            text="Joining match…",
+            bg="#1a1a1a",
+            fg="white",
+            font=("Arial", 11),
+            wraplength=240,
+            justify="center",
+        ).pack()
+        tk.Button(
+            online_wait_frame,
+            text="Cancel",
+            command=dismiss_online_wait,
+            font=("Arial", 11),
+            bg="#444444",
+            fg="white",
+            bd=2,
+        ).pack(pady=(4, 2))
 
     games_header = tk.Frame(right_frame, bg="#1a1a1a")
     games_header.pack(fill="x", pady=(4, 0))
@@ -527,7 +653,8 @@ def choose_mode(initial_window_pos=None):
                 json.dumps({"type": "join_game", "id": game["id"]}).encode("utf-8") + b"\n"
             )
         except OSError:
-            pass
+            return
+        show_online_wait_join()
 
     join_btn_right = tk.Button(right_frame, text="Join Game", command=join_game, **BTN, state="disabled")
     join_btn_right.pack(pady=(5, 10))
@@ -579,7 +706,7 @@ def choose_mode(initial_window_pos=None):
         "mode": result["mode"],
         "ip": result["ip"],
         "port": result.get("port", 12345),
-        "network": net_manager,
+        "network": result.get("network", net_manager),
         "nickname": nickname_out,
         "window_pos": window_pos,
     }
