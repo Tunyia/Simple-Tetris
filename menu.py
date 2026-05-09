@@ -1,44 +1,66 @@
-import tkinter as tk
-import socket
-from network import NetworkManager
-import threading
 import json
-import time
 import queue
+import socket
+import sys
+import threading
+import time
+import tkinter as tk
+
+from network import NetworkManager
 
 server_conn = None
 server_connected = False
 server_games = []
 
+
 def get_local_ip():
     try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        pass
+    try:
         return socket.gethostbyname(socket.gethostname())
-    except:
-        return "127.0.0.1:12345"
+    except OSError:
+        return "127.0.0.1"
 
 
 def choose_mode():
     global server_conn, server_connected
+
     ui_queue = queue.Queue()
     menu_running = True
-    after_id = None  # Переменная для хранения таймера очереди???
+    after_id = None
 
     result = {
         "mode": None,
         "ip": "127.0.0.1",
-        "port": 12345
+        "port": 12345,
     }
 
-    # UI variables
     waiting_label = None
     cancel_btn = None
     copy_btn = None
 
     root = tk.Tk()
     root.title("Tetris Menu")
+    root.minsize(500, 360)
     root.geometry("500x360")
     root.resizable(False, False)
     root.configure(bg="#0f0f0f")
+
+    if sys.platform == "darwin":
+        try:
+            cur = float(root.tk.call("tk", "scaling"))
+            root.tk.call("tk", "scaling", max(1.0, cur * 0.95))
+        except tk.TclError:
+            pass
+
+    net_manager = NetworkManager()
 
     def process_ui_queue():
         nonlocal after_id
@@ -46,19 +68,22 @@ def choose_mode():
         if not menu_running:
             return
 
-        while not ui_queue.empty():
+        while True:
             try:
                 func = ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
                 func()
-            except:
+            except tk.TclError:
                 pass
 
         if menu_running:
             after_id = root.after(50, process_ui_queue)
+
     process_ui_queue()
 
-    # БЕЗОПАСНЫЙ ВЫХОД!! очень важная шняга
-    def safe_exit(mode=None, ip="", port=12345):  # Добавим порт в аргументы
+    def safe_exit(mode=None, ip="", port=12345):
         nonlocal menu_running, after_id
         global server_conn, server_connected
 
@@ -67,26 +92,28 @@ def choose_mode():
         result["ip"] = ip
         result["port"] = port
 
+        if mode in (None, "single"):
+            net_manager.stop()
+
         if after_id:
             try:
                 root.after_cancel(after_id)
-            except:
+            except tk.TclError:
                 pass
+            after_id = None
 
         if server_conn:
             try:
                 server_conn.close()
-            except:
+            except OSError:
                 pass
             server_conn = None
             server_connected = False
 
         root.quit()
 
-    # Перехватываем нажатие на крестик окна
     root.protocol("WM_DELETE_WINDOW", lambda: safe_exit(None))
 
-    # helpers
     def disable_buttons():
         single_btn.config(state="disabled")
         host_btn.config(state="disabled")
@@ -101,64 +128,84 @@ def choose_mode():
 
     def clear_waiting():
         nonlocal waiting_label, cancel_btn, copy_btn
-        if waiting_label: waiting_label.destroy(); waiting_label = None
-        if cancel_btn: cancel_btn.destroy(); cancel_btn = None
-        if copy_btn: copy_btn.destroy(); copy_btn = None
+        if waiting_label:
+            waiting_label.destroy()
+            waiting_label = None
+        if cancel_btn:
+            cancel_btn.destroy()
+            cancel_btn = None
+        if copy_btn:
+            copy_btn.destroy()
+            copy_btn = None
 
     def show_waiting(text):
         nonlocal waiting_label
         if waiting_label:
             waiting_label.config(text=text)
         else:
-            waiting_label = tk.Label(left_frame, text=text, bg="#0f0f0f", fg="white", font=("Arial", 12))
+            waiting_label = tk.Label(
+                left_frame, text=text, bg="#1a1a1a", fg="white", font=("Arial", 12)
+            )
             waiting_label.pack(pady=0)
 
     def show_cancel():
         nonlocal cancel_btn
         if not cancel_btn:
-            cancel_btn = tk.Button(left_frame, text="Cancel", command=cancel_action, font=("Arial", 12), bg="#444444",
-                                   fg="white", width=12, bd=3)
+            cancel_btn = tk.Button(
+                left_frame,
+                text="Cancel",
+                command=cancel_action,
+                font=("Arial", 12),
+                bg="#444444",
+                fg="white",
+                width=12,
+                bd=3,
+            )
             cancel_btn.pack(pady=5)
 
     def copy_ip(ip):
         root.clipboard_clear()
         root.clipboard_append(ip)
-        root.update()
+        root.update_idletasks()
         show_waiting(f"IP: {ip}\nCopied!")
 
     def show_copy(ip):
         nonlocal copy_btn
         if not copy_btn:
-            copy_btn = tk.Button(left_frame, text="Copy IP", command=lambda: copy_ip(ip), font=("Arial", 12),
-                                 bg="#444444", fg="white", width=12, bd=3)
+            copy_btn = tk.Button(
+                left_frame,
+                text="Copy IP",
+                command=lambda: copy_ip(ip),
+                font=("Arial", 12),
+                bg="#444444",
+                fg="white",
+                width=12,
+                bd=3,
+            )
             copy_btn.pack(pady=5)
 
-    # actions
     def set_single():
         safe_exit("single")
 
-    net_manager = NetworkManager()
-
     def set_host():
         ip = get_local_ip()
-        port_holder = {"port": None}
+        disable_buttons()
 
         def on_port(port):
-            port_holder["port"] = port
             if menu_running:
                 ui_queue.put(lambda: show_waiting(f"IP: {ip}:{port}\nWaiting for player..."))
                 ui_queue.put(lambda: show_copy(f"{ip}:{port}"))
                 ui_queue.put(show_cancel)
-            pass
 
         def on_connected():
             if menu_running:
-                # Передаем данные хоста
-                ui_queue.put(lambda: safe_exit("host", ip))
+                p = net_manager.listen_port or 12345
+                ui_queue.put(lambda: safe_exit("host", ip, p))
 
         def on_status(text):
             if menu_running:
                 ui_queue.put(lambda: show_waiting(text))
+                ui_queue.put(enable_buttons)
 
         net_manager.start_server(on_connected, on_status, on_port)
 
@@ -167,11 +214,16 @@ def choose_mode():
         if ":" not in ip_text:
             show_waiting("Use IP:PORT")
             return
-        ip, port_str = ip_text.split(":")
+        host_part, port_str = ip_text.rsplit(":", 1)
+        disable_buttons()
 
         def on_success():
             if menu_running:
-                ui_queue.put(lambda: safe_exit("join", ip))
+                try:
+                    p = int(port_str)
+                except ValueError:
+                    p = 12345
+                ui_queue.put(lambda: safe_exit("join", host_part.strip(), p))
 
         def on_fail():
             if menu_running:
@@ -179,69 +231,81 @@ def choose_mode():
                 ui_queue.put(enable_buttons)
 
         try:
-            net_manager.start_client(ip, int(port_str), on_success, on_fail)
+            net_manager.start_client(host_part.strip(), int(port_str), on_success, on_fail)
         except ValueError:
             show_waiting("Invalid Port")
+            enable_buttons()
 
     def cancel_action():
         net_manager.stop()
         enable_buttons()
         clear_waiting()
 
-    # СЕТЕВАЯ ЛОГИКА МЕНЮ
     def server_connection_loop():
         global server_conn, server_connected
         while menu_running:
             if not server_connected:
+                s = None
                 try:
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(2)
-
-                    # Теперь safe_exit сможет прервать процесс подключения!
+                    s.settimeout(2.0)
                     server_conn = s
-
                     s.connect(("127.0.0.1", 5555))
-                    s.settimeout(None)
-
+                    s.settimeout(30.0)
                     server_connected = True
                     if menu_running:
                         ui_queue.put(lambda: update_server_status(True))
                         request_games()
-                        threading.Thread(target=server_receive_loop, daemon=True).start()
-                except Exception as e:
+                        threading.Thread(target=server_receive_loop, name="menu-server-rx", daemon=True).start()
+                except OSError:
                     server_connected = False
+                    if s:
+                        try:
+                            s.close()
+                        except OSError:
+                            pass
+                    server_conn = None
                     if menu_running:
                         ui_queue.put(lambda: update_server_status(False))
 
-            # Ждем 5 секунд мелкими шагами
             for _ in range(50):
-                if not menu_running: return
+                if not menu_running:
+                    return
                 time.sleep(0.1)
 
     def server_receive_loop():
         global server_connected, server_conn
         buffer = ""
         while menu_running and server_connected:
+            conn = server_conn
+            if not conn:
+                break
             try:
-                data = server_conn.recv(4096)
+                data = conn.recv(4096)
                 if not data:
                     break
-                buffer += data.decode()
+                buffer += data.decode("utf-8")
                 while "\n" in buffer:
                     msg, buffer = buffer.split("\n", 1)
-                    packet = json.loads(msg)
-                    if packet["type"] == "games":
+                    msg = msg.strip()
+                    if not msg:
+                        continue
+                    try:
+                        packet = json.loads(msg)
+                    except json.JSONDecodeError:
+                        continue
+                    if packet.get("type") == "games":
                         server_games[:] = packet["games"]
                         if menu_running:
                             ui_queue.put(refresh_games_list)
-            except:
+            except (OSError, UnicodeDecodeError):
                 break
 
         server_connected = False
         if server_conn:
             try:
                 server_conn.close()
-            except:
+            except OSError:
                 pass
         server_conn = None
         if menu_running:
@@ -250,19 +314,20 @@ def choose_mode():
     def request_games():
         if server_conn and server_connected:
             try:
-                server_conn.sendall(json.dumps({"type": "get_games"}).encode() + b"\n")
-            except:
+                server_conn.sendall(json.dumps({"type": "get_games"}).encode("utf-8") + b"\n")
+            except OSError:
                 pass
 
-    # UI Elements
     main_frame = tk.Frame(root, bg="#0f0f0f")
     main_frame.pack(fill="both", expand=True)
 
-    left_frame = tk.Frame(main_frame, bg="#1a1a1a", width=200)
-    left_frame.pack(side="left", fill="y", expand=True)
+    left_frame = tk.Frame(main_frame, bg="#1a1a1a", width=220, height=340)
+    left_frame.pack(side="left", fill="y", padx=(8, 4), pady=8)
+    left_frame.pack_propagate(False)
 
-    right_frame = tk.Frame(main_frame, bg="#1a1a1a", width=300)
-    right_frame.pack(side="right", fill="y", expand=True)
+    right_frame = tk.Frame(main_frame, bg="#1a1a1a", width=260, height=340)
+    right_frame.pack(side="right", fill="y", padx=(4, 8), pady=8)
+    right_frame.pack_propagate(False)
 
     root.update_idletasks()
     w = root.winfo_width()
@@ -271,8 +336,18 @@ def choose_mode():
     y = (root.winfo_screenheight() // 2) - (h // 2)
     root.geometry(f"{w}x{h}+{x}+{y}")
 
-    BTN = {"font": ("Arial", 14), "bg": "#333333", "fg": "white", "activebackground": "#555555",
-           "activeforeground": "white", "bd": 3, "width": 16, "height": 1}
+    mono_font = ("Menlo", 9) if sys.platform == "darwin" else ("Consolas", 9)
+
+    BTN = {
+        "font": ("Arial", 14),
+        "bg": "#333333",
+        "fg": "white",
+        "activebackground": "#555555",
+        "activeforeground": "white",
+        "bd": 3,
+        "width": 14,
+        "height": 1,
+    }
 
     single_btn = tk.Button(left_frame, text="Single Player", command=set_single, **BTN)
     single_btn.pack(pady=(15, 5))
@@ -280,9 +355,15 @@ def choose_mode():
     host_btn = tk.Button(left_frame, text="Host Game", command=set_host, **BTN)
     host_btn.pack(pady=5)
 
-    tk.Label(left_frame, text="Server IP:", bg="#0f0f0f", fg="white", font=("Arial", 10)).pack(pady=(15, 0))
-    ip_entry = tk.Entry(left_frame, font=("Arial", 12), width=20)
-    ip_entry.insert(0, "127.0.0.1:12345")
+    tk.Label(
+        left_frame,
+        text="Host IP:port (see host screen):",
+        bg="#1a1a1a",
+        fg="white",
+        font=("Arial", 9),
+    ).pack(pady=(15, 0))
+    ip_entry = tk.Entry(left_frame, font=("Arial", 12), width=18)
+    ip_entry.insert(0, "127.0.0.1:")
     ip_entry.pack(pady=5)
 
     join_btn_left = tk.Button(left_frame, text="Join Game", command=set_join, **BTN)
@@ -295,8 +376,13 @@ def choose_mode():
     nickname_entry.insert(0, "Player")
     nickname_entry.pack(pady=(0, 0), ipadx=5, ipady=0)
 
-    server_status = tk.Label(right_frame, text="Server: connecting", bg="#1a1a1a", fg="lightgray",
-                             font=("Arial", 10, "bold"))
+    server_status = tk.Label(
+        right_frame,
+        text="Server: connecting",
+        bg="#1a1a1a",
+        fg="lightgray",
+        font=("Arial", 10, "bold"),
+    )
     server_status.pack(pady=(0, 0))
 
     def update_server_status(online=True):
@@ -309,20 +395,32 @@ def choose_mode():
             join_btn_right.config(state="disabled")
 
     def create_game():
-        if not server_connected or not server_conn: return
+        if not server_connected or not server_conn:
+            return
         name = nickname_entry.get().strip()
-        if not name: return
+        if not name:
+            return
         try:
-            server_conn.sendall(json.dumps({"type": "create_game", "name": name}).encode() + b"\n")
-        except:
+            server_conn.sendall(
+                json.dumps({"type": "create_game", "name": name}).encode("utf-8") + b"\n"
+            )
+        except OSError:
             pass
 
     create_btn = tk.Button(right_frame, text="Create Game", command=create_game, state="disabled", **BTN)
     create_btn.pack(pady=(5, 0))
 
     tk.Label(right_frame, text="Games", bg="#1a1a1a", fg="white").pack()
-    games_listbox = tk.Listbox(right_frame, height=6, font=("Consolas", 8), bg="#222222", fg="white",
-                               selectbackground="#444444", borderwidth=4, activestyle="none")
+    games_listbox = tk.Listbox(
+        right_frame,
+        height=6,
+        font=mono_font,
+        bg="#222222",
+        fg="white",
+        selectbackground="#444444",
+        borderwidth=4,
+        activestyle="none",
+    )
     games_listbox.pack(padx=0, pady=0, fill="x")
 
     def refresh_games_list():
@@ -332,19 +430,23 @@ def choose_mode():
             games_listbox.insert(tk.END, text)
 
     def join_game():
-        if not server_connected or not server_conn: return
+        if not server_connected or not server_conn:
+            return
         selection = games_listbox.curselection()
-        if not selection: return
+        if not selection:
+            return
         game = server_games[selection[0]]
         try:
-            server_conn.sendall(json.dumps({"type": "join_game", "id": game["id"]}).encode() + b"\n")
-        except:
+            server_conn.sendall(
+                json.dumps({"type": "join_game", "id": game["id"]}).encode("utf-8") + b"\n"
+            )
+        except OSError:
             pass
 
     join_btn_right = tk.Button(right_frame, text="Join Game", command=join_game, **BTN, state="disabled")
     join_btn_right.pack(pady=(5, 10))
 
-    def on_select(event):
+    def on_select(_event):
         if games_listbox.curselection():
             join_btn_right.config(state="normal")
         else:
@@ -352,23 +454,18 @@ def choose_mode():
 
     games_listbox.bind("<<ListboxSelect>>", on_select)
 
-    threading.Thread(target=server_connection_loop, daemon=True).start()
+    threading.Thread(target=server_connection_loop, name="menu-server-conn", daemon=True).start()
 
     root.mainloop()
 
-    final_ip = "127.0.0.1"
-    final_port = 12345
-
     try:
         root.destroy()
-    except Exception as e:
-        print(e)
+    except tk.TclError:
         pass
 
-    # Возвращаем данные. Теперь main.py получит всё, что нужно.
     return {
         "mode": result["mode"],
         "ip": result["ip"],
         "port": result.get("port", 12345),
-        "network": net_manager
+        "network": net_manager,
     }
