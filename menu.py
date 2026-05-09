@@ -72,6 +72,7 @@ def choose_mode(initial_window_pos=None):
 
     waiting_label = None
     waiting_host_row = None
+    last_focused_game_id = None
 
     root = tk.Tk()
     root.title("Tetris Menu")
@@ -489,10 +490,20 @@ def choose_mode(initial_window_pos=None):
     games_listbox.pack(padx=0, pady=0, fill="x")
 
     def refresh_games_list():
+        nonlocal last_focused_game_id
         games_listbox.delete(0, tk.END)
         for g in server_games:
             text = f"{g['name']:<10}  {g['players']}/2"
             games_listbox.insert(tk.END, text)
+        if last_focused_game_id is not None:
+            for i, g in enumerate(server_games):
+                if g.get("id") == last_focused_game_id:
+                    games_listbox.selection_set(i)
+                    games_listbox.activate(i)
+                    games_listbox.see(i)
+                    break
+            else:
+                last_focused_game_id = None
         sync_join_right_state()
 
     def update_server_status(online=True):
@@ -522,6 +533,12 @@ def choose_mode(initial_window_pos=None):
     join_btn_right.pack(pady=(5, 10))
 
     def on_select(_event):
+        nonlocal last_focused_game_id
+        sel = games_listbox.curselection()
+        if sel and server_games and sel[0] < len(server_games):
+            last_focused_game_id = server_games[sel[0]].get("id")
+        else:
+            last_focused_game_id = None
         sync_join_right_state()
 
     games_listbox.bind("<<ListboxSelect>>", on_select)
