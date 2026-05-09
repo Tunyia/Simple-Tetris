@@ -168,7 +168,13 @@ def choose_mode():
             waiting_label.config(text=text)
         else:
             waiting_label = tk.Label(
-                left_frame, text=text, bg="#1a1a1a", fg="white", font=("Arial", 12)
+                left_frame,
+                text=text,
+                bg="#1a1a1a",
+                fg="white",
+                font=("Arial", 12),
+                wraplength=200,
+                justify="center",
             )
             waiting_label.pack(pady=0)
 
@@ -497,6 +503,13 @@ def choose_mode():
     except tk.TclError:
         pass
 
+    window_pos = None
+    try:
+        root.update_idletasks()
+        window_pos = (root.winfo_rootx(), root.winfo_rooty())
+    except tk.TclError:
+        pass
+
     try:
         root.destroy()
     except tk.TclError:
@@ -510,4 +523,5 @@ def choose_mode():
         "port": result.get("port", 12345),
         "network": net_manager,
         "nickname": nickname_out,
+        "window_pos": window_pos,
     }

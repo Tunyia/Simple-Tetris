@@ -1,3 +1,4 @@
+import os
 import sys
 
 import pygame
@@ -12,6 +13,12 @@ def main():
 
         if not mode_data or mode_data.get("mode") is None:
             break
+
+        pos = mode_data.get("window_pos")
+        if pos and len(pos) == 2:
+            os.environ["SDL_VIDEO_WINDOW_POS"] = f"{int(pos[0])},{int(pos[1])}"
+        else:
+            os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
 
         pygame.init()
 

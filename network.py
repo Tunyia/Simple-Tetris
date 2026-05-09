@@ -33,6 +33,7 @@ class NetworkManager:
         self.rematch_ready = False
         self.game_should_start = False
         self.peer_display_name: Optional[str] = None
+        self._shutdown_requested = False
 
     def _drain_incoming(self) -> None:
         while True:
@@ -110,6 +111,7 @@ class NetworkManager:
 
         def run() -> None:
             try:
+                self._shutdown_requested = False
                 self._stop_event.clear()
                 self.peer_display_name = None
                 self._drain_incoming()
@@ -145,7 +147,8 @@ class NetworkManager:
                     self._close_listen_socket()
                     self._close_conn()
                 self.running = False
-                on_status(f"Error: {e}")
+                if not self._shutdown_requested:
+                    on_status(f"Error: {e}")
 
         threading.Thread(target=run, name="net-host", daemon=True).start()
 
@@ -160,6 +163,7 @@ class NetworkManager:
 
         def run() -> None:
             try:
+                self._shutdown_requested = False
                 self._stop_event.clear()
                 self.peer_display_name = None
                 self._drain_incoming()
@@ -180,7 +184,8 @@ class NetworkManager:
                     self._close_conn()
                 self.running = False
                 print(f"[CLIENT] Connection failed: {e}")
-                on_fail()
+                if not self._shutdown_requested:
+                    on_fail()
 
         threading.Thread(target=run, name="net-client", daemon=True).start()
 
@@ -261,6 +266,7 @@ class NetworkManager:
         self.game_should_start = False
 
     def stop(self) -> None:
+        self._shutdown_requested = True
         self._stop_event.set()
         with self._lock:
             self.running = False
