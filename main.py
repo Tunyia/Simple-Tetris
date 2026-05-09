@@ -8,8 +8,10 @@ from tetris import TetrisGame
 
 
 def main():
+    pending_menu_pos = None
     while True:
-        mode_data = choose_mode()
+        mode_data = choose_mode(initial_window_pos=pending_menu_pos)
+        pending_menu_pos = None
 
         if not mode_data or mode_data.get("mode") is None:
             break
@@ -52,6 +54,7 @@ def main():
                 if network:
                     network.stop()
                 pygame.display.quit()
+                pending_menu_pos = getattr(game, "_return_window_pos", None)
                 break
         finally:
             pygame.quit()

@@ -5,6 +5,30 @@ import random
 import os
 print("Tetris by Tunya")
 
+
+def read_pygame_window_position():
+    """Верхний левый угол окна игры на экране (для позиции меню). Windows; иначе None."""
+    if not pygame.display.get_init():
+        return None
+    try:
+        if not pygame.display.get_surface():
+            return None
+        info = pygame.display.get_wm_info()
+    except (pygame.error, AttributeError, TypeError):
+        return None
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        hwnd = info.get("window")
+        if not hwnd:
+            return None
+        rect = wintypes.RECT()
+        if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return None
+        return int(rect.left), int(rect.top)
+    return None
+
 # КОНСТАНТЫ
 WIDTH, HEIGHT = 300, 600
 BASE_WIDTH = 300
@@ -281,6 +305,7 @@ class TetrisGame:
         if self.network and self.network.peer_display_name:
             self.opponent_name = self.network.peer_display_name
         self._sent_display_name = False
+        self._return_window_pos = None
 
         self.base_width = 300
         self.height = 600
@@ -418,6 +443,7 @@ class TetrisGame:
 
     def handle_menu_input(self, key):
         if key == pygame.K_RETURN:
+            self._return_window_pos = read_pygame_window_position()
             if self.network:
                 self.network.send_data({"type": "disconnect"})
                 self.network.stop()

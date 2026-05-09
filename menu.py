@@ -56,7 +56,7 @@ def get_local_ip():
         return "127.0.0.1"
 
 
-def choose_mode():
+def choose_mode(initial_window_pos=None):
     global server_conn, server_connected
 
     ui_queue = queue.Queue()
@@ -76,7 +76,11 @@ def choose_mode():
     root = tk.Tk()
     root.title("Tetris Menu")
     root.minsize(500, 400)
-    root.geometry("500x400")
+    if initial_window_pos and len(initial_window_pos) == 2:
+        ix, iy = int(initial_window_pos[0]), int(initial_window_pos[1])
+        root.geometry(f"500x400+{ix}+{iy}")
+    else:
+        root.geometry("500x400")
     root.resizable(False, False)
     root.configure(bg="#0f0f0f")
 
@@ -147,11 +151,20 @@ def choose_mode():
         join_btn_left.config(state="disabled")
         join_btn_right.config(state="disabled")
 
-    def enable_buttons():
+    def sync_join_right_state():
+        if not server_connected:
+            join_btn_right.config(state="disabled")
+            return
+        if games_listbox.curselection():
+            join_btn_right.config(state="normal")
+        else:
+            join_btn_right.config(state="disabled")
+
+    def enable_local_buttons():
         single_btn.config(state="normal")
         host_btn.config(state="normal")
         join_btn_left.config(state="normal")
-        join_btn_right.config(state="normal")
+        sync_join_right_state()
 
     def clear_waiting():
         nonlocal waiting_label, waiting_host_row
@@ -231,7 +244,7 @@ def choose_mode():
         def on_status(text):
             if menu_running:
                 ui_queue.put(lambda: show_waiting(text))
-                ui_queue.put(enable_buttons)
+                ui_queue.put(enable_local_buttons)
 
         net_manager.start_server(on_connected, on_status, on_port)
 
@@ -254,17 +267,17 @@ def choose_mode():
         def on_fail():
             if menu_running:
                 ui_queue.put(lambda: show_waiting("Failed to connect"))
-                ui_queue.put(enable_buttons)
+                ui_queue.put(enable_local_buttons)
 
         try:
             net_manager.start_client(host_part.strip(), int(port_str), on_success, on_fail)
         except ValueError:
             show_waiting("Invalid Port")
-            enable_buttons()
+            enable_local_buttons()
 
     def cancel_action():
         net_manager.stop()
-        enable_buttons()
+        enable_local_buttons()
         clear_waiting()
 
     def server_connection_loop():
@@ -294,7 +307,7 @@ def choose_mode():
                     if menu_running:
                         ui_queue.put(lambda: update_server_status(False))
 
-            for _ in range(50):
+            for _ in range(10):
                 if not menu_running:
                     return
                 time.sleep(0.1)
@@ -380,9 +393,13 @@ def choose_mode():
     root.update_idletasks()
     w = root.winfo_width()
     h = root.winfo_height()
-    x = (root.winfo_screenwidth() // 2) - (w // 2)
-    y = (root.winfo_screenheight() // 2) - (h // 2)
-    root.geometry(f"{w}x{h}+{x}+{y}")
+    if initial_window_pos and len(initial_window_pos) == 2:
+        ix, iy = int(initial_window_pos[0]), int(initial_window_pos[1])
+        root.geometry(f"{w}x{h}+{ix}+{iy}")
+    else:
+        x = (root.winfo_screenwidth() // 2) - (w // 2)
+        y = (root.winfo_screenheight() // 2) - (h // 2)
+        root.geometry(f"{w}x{h}+{x}+{y}")
 
     mono_font = ("Menlo", 9) if sys.platform == "darwin" else ("Consolas", 9)
 
@@ -426,15 +443,6 @@ def choose_mode():
     )
     server_status.pack(pady=(0, 0))
 
-    def update_server_status(online=True):
-        if online:
-            server_status.config(text="Server: ● online", fg="lightgreen")
-            create_btn.config(state="normal")
-        else:
-            server_status.config(text="Server: ● offline", fg="red")
-            create_btn.config(state="disabled")
-            join_btn_right.config(state="disabled")
-
     def create_game():
         if not server_connected or not server_conn:
             return
@@ -449,7 +457,25 @@ def choose_mode():
     create_btn = tk.Button(right_frame, text="Create Game", command=create_game, state="disabled", **BTN)
     create_btn.pack(pady=(5, 0))
 
-    tk.Label(right_frame, text="Games", bg="#1a1a1a", fg="white").pack()
+    games_header = tk.Frame(right_frame, bg="#1a1a1a")
+    games_header.pack(fill="x", pady=(4, 0))
+    tk.Label(games_header, text="Games", bg="#1a1a1a", fg="white", font=("Arial", 10)).pack(
+        side=tk.LEFT, anchor="w"
+    )
+    tk.Button(
+        games_header,
+        text="⭮",
+        command=request_games,
+        font=("Arial", 11),
+        bg="#444444",
+        fg="white",
+        activebackground="#555555",
+        activeforeground="white",
+        bd=2,
+        width=2,
+        height=1,
+    ).pack(side=tk.RIGHT)
+
     games_listbox = tk.Listbox(
         right_frame,
         height=6,
@@ -467,6 +493,16 @@ def choose_mode():
         for g in server_games:
             text = f"{g['name']:<10}  {g['players']}/2"
             games_listbox.insert(tk.END, text)
+        sync_join_right_state()
+
+    def update_server_status(online=True):
+        if online:
+            server_status.config(text="Server: ● online", fg="lightgreen")
+            create_btn.config(state="normal")
+        else:
+            server_status.config(text="Server: ● offline", fg="red")
+            create_btn.config(state="disabled")
+        sync_join_right_state()
 
     def join_game():
         if not server_connected or not server_conn:
@@ -486,14 +522,19 @@ def choose_mode():
     join_btn_right.pack(pady=(5, 10))
 
     def on_select(_event):
-        if games_listbox.curselection():
-            join_btn_right.config(state="normal")
-        else:
-            join_btn_right.config(state="disabled")
+        sync_join_right_state()
 
     games_listbox.bind("<<ListboxSelect>>", on_select)
 
+    def schedule_lobby_refresh():
+        if not menu_running:
+            return
+        if server_connected and server_conn:
+            request_games()
+        root.after(2500, schedule_lobby_refresh)
+
     threading.Thread(target=server_connection_loop, name="menu-server-conn", daemon=True).start()
+    root.after(2500, schedule_lobby_refresh)
 
     root.mainloop()
 
