@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import socket
 import sys
@@ -11,26 +12,77 @@ from network import NetworkManager
 from server_relay import ServerRelayNetwork
 
 _SETTINGS_PATH = Path(__file__).resolve().parent / "player_settings.json"
+_DEFAULT_LOBBY_HOST = "94.156.170.112"
+_DEFAULT_LOBBY_PORT = 5555
 
 
-def load_saved_nickname():
+def _load_settings_raw():
     try:
         if _SETTINGS_PATH.is_file():
             data = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                n = str(data.get("nickname", "")).strip()
-                if n:
-                    return n[:32]
+                return data
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         pass
-    return "Player"
+    return {}
 
 
-def save_nickname(nickname):
+def load_saved_nickname():
+    n = str(_load_settings_raw().get("nickname", "")).strip()
+    return n[:32] if n else "Player"
+
+
+def load_lobby_address():
+    env_h = os.environ.get("TETRIS_LOBBY_HOST", "").strip()
+    env_p = os.environ.get("TETRIS_LOBBY_PORT", "").strip()
+    if env_h:
+        try:
+            port = int(env_p) if env_p else _DEFAULT_LOBBY_PORT
+        except ValueError:
+            port = _DEFAULT_LOBBY_PORT
+        return env_h, port
+    data = _load_settings_raw()
+    h = str(data.get("lobby_host", _DEFAULT_LOBBY_HOST)).strip() or _DEFAULT_LOBBY_HOST
+    try:
+        port = int(data.get("lobby_port", _DEFAULT_LOBBY_PORT))
+    except (TypeError, ValueError):
+        port = _DEFAULT_LOBBY_PORT
+    return h, port
+
+
+def lobby_address_display_string():
+    h, p = load_lobby_address()
+    return f"{h}:{p}"
+
+
+def parse_lobby_entry(text):
+    t = (text or "").strip()
+    if not t:
+        return _DEFAULT_LOBBY_HOST, _DEFAULT_LOBBY_PORT
+    if ":" in t:
+        host_part, port_part = t.rsplit(":", 1)
+        host_part = host_part.strip() or _DEFAULT_LOBBY_HOST
+        try:
+            return host_part, int(port_part.strip())
+        except ValueError:
+            return host_part, _DEFAULT_LOBBY_PORT
+    return t, _DEFAULT_LOBBY_PORT
+
+
+def save_player_settings(nickname, lobby_host, lobby_port):
     try:
         nick = (nickname or "").strip() or "Player"
+        host = (lobby_host or "").strip() or _DEFAULT_LOBBY_HOST
+        try:
+            port = int(lobby_port)
+        except (TypeError, ValueError):
+            port = _DEFAULT_LOBBY_PORT
+        data = _load_settings_raw()
+        data["nickname"] = nick[:32]
+        data["lobby_host"] = host
+        data["lobby_port"] = port
         _SETTINGS_PATH.write_text(
-            json.dumps({"nickname": nick[:32]}, ensure_ascii=False, indent=2),
+            json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except OSError:
@@ -98,6 +150,7 @@ def choose_mode(initial_window_pos=None):
 
     net_manager = NetworkManager()
     result["network"] = net_manager
+    lobby_addr_holder = [load_lobby_address()]
 
     def finish_online_relay(sock):
         nonlocal menu_running, after_id
@@ -332,7 +385,8 @@ def choose_mode(initial_window_pos=None):
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.settimeout(2.0)
                     server_conn = s
-                    s.connect(("127.0.0.1", 5555))
+                    lh, lp = lobby_addr_holder[0]
+                    s.connect((lh, lp))
                     s.settimeout(0.5)
                     server_connected = True
                     if menu_running:
@@ -419,6 +473,25 @@ def choose_mode(initial_window_pos=None):
     nickname_entry = tk.Entry(nick_bar, font=("Arial", 12), justify="center")
     nickname_entry.pack(side=tk.LEFT, fill="x", expand=True)
     nickname_entry.insert(0, load_saved_nickname())
+
+    lobby_row = tk.Frame(main_frame, bg="#0f0f0f")
+    lobby_row.pack(fill="x", padx=12, pady=(0, 6))
+    tk.Label(
+        lobby_row,
+        text="Lobby host",
+        bg="#0f0f0f",
+        fg="#cccccc",
+        font=("Arial", 10),
+    ).pack(side=tk.LEFT, padx=(0, 8))
+    lobby_sv = tk.StringVar(value=lobby_address_display_string())
+
+    def sync_lobby_holder(*_):
+        lobby_addr_holder[0] = parse_lobby_entry(lobby_sv.get())
+
+    lobby_sv.trace_add("write", sync_lobby_holder)
+    lobby_entry = tk.Entry(lobby_row, font=("Arial", 11), textvariable=lobby_sv)
+    lobby_entry.pack(side=tk.LEFT, fill="x", expand=True)
+    sync_lobby_holder()
 
     content = tk.Frame(main_frame, bg="#0f0f0f")
     content.pack(fill="both", expand=True)
@@ -700,7 +773,8 @@ def choose_mode(initial_window_pos=None):
     except tk.TclError:
         pass
 
-    save_nickname(nickname_out)
+    lh, lp = lobby_addr_holder[0]
+    save_player_settings(nickname_out, lh, lp)
 
     return {
         "mode": result["mode"],

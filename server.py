@@ -1,10 +1,14 @@
 import json
+import os
 import socket
 import threading
 from typing import Any, Dict, List, Optional
 
-HOST = "0.0.0.0"
-PORT = 5555
+HOST = os.environ.get("TETRIS_LOBBY_BIND", "0.0.0.0").strip() or "0.0.0.0"
+try:
+    PORT = int(os.environ.get("TETRIS_LOBBY_PORT", "5555"))
+except ValueError:
+    PORT = 5555
 
 
 def _send_json(conn: socket.socket, obj: dict) -> None:
